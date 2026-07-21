@@ -154,3 +154,20 @@ create index if not exists idx_settings_section_latest on settings(section, conf
 -- re-run (idempotent).
 -- ─────────────────────────────────────────────────────────────
 alter table signals add column if not exists signal_summary text;
+
+-- ─────────────────────────────────────────────────────────────
+-- contacts: Claude's "who to reach out to and why" recommendation, generated
+-- once per entity view and cached here (same generate-once pattern). rank is
+-- 1 = top recommendation; ties/unset are pushed to the end. Safe to re-run.
+-- ─────────────────────────────────────────────────────────────
+alter table contacts add column if not exists outreach_reason text;
+alter table contacts add column if not exists outreach_rank integer;
+
+-- ─────────────────────────────────────────────────────────────
+-- pushes: now scoped per (entity, contact) instead of one-per-entity-ever —
+-- a rep can push a task for one contact today and a different contact at
+-- the same company later without the first push blocking it. Existing rows
+-- (from before this column existed) have contact_id null, meaning "the
+-- primary contact at the time" — left as-is rather than backfilled.
+-- ─────────────────────────────────────────────────────────────
+alter table pushes add column if not exists contact_id uuid references contacts(id) on delete set null;

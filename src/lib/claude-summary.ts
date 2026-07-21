@@ -1,6 +1,6 @@
 import type { Message } from "@anthropic-ai/sdk/resources/index";
 import { anthropic, CLAUDE_MODEL, USE_MOCK_CLAUDE } from "@/lib/anthropic";
-import type { EntityDetail } from "@/lib/entity-detail";
+import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import { RELATIONSHIP_STATE_LABELS } from "@/lib/relationship-state";
 
 function extractText(message: Message): string {
@@ -161,14 +161,87 @@ export async function generateSignalSummaries(
   return result;
 }
 
+function buildContactBlocks(contacts: EntityDetailContact[], primaryContactId: string | null): string {
+  return contacts
+    .map(
+      (c) => `[[CONTACT ${c.id}]]
+Name: ${c.fullName ?? "unknown"}
+Email: ${c.email ?? "unknown"}
+In HubSpot: ${c.hubspotContactId ? "yes" : "no"}
+Tied to most recent signal: ${c.id === primaryContactId ? "yes" : "no"}`
+    )
+    .join("\n\n");
+}
+
+function parseContactRecommendations(raw: string): Record<string, { reason: string; rank: number }> {
+  const result: Record<string, { reason: string; rank: number }> = {};
+  const blocks = raw.split(/^###\s+/m).filter((b) => b.trim());
+  for (const block of blocks) {
+    const [idLine, rankLine, ...rest] = block.split("\n");
+    const id = idLine.trim();
+    const rankMatch = rankLine?.match(/Rank:\s*(\d+)/i);
+    const rank = rankMatch ? parseInt(rankMatch[1], 10) : Number.MAX_SAFE_INTEGER;
+    const reason = rest.join("\n").trim();
+    if (id && reason) result[id] = { reason, rank };
+  }
+  return result;
+}
+
+/**
+ * Ranks an entity's known contacts by who a rep should reach out to first,
+ * with a short reason each — the "who to reach out to" list on the entity
+ * detail page. One combined call for all contacts (not one per contact), so
+ * it's cheap enough to run once per entity view and cache, same as
+ * generateEntitySummary.
+ */
+export async function generateContactRecommendations(
+  detail: EntityDetail
+): Promise<Record<string, { reason: string; rank: number }>> {
+  if (detail.contacts.length === 0) return {};
+
+  if (USE_MOCK_CLAUDE) {
+    return Object.fromEntries(
+      detail.contacts.map((c, i) => [
+        c.id,
+        { reason: "Tied to this account's recent activity. [mock reason]", rank: i + 1 },
+      ])
+    );
+  }
+
+  const message = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: Math.min(4096, 150 * detail.contacts.length + 300),
+    system:
+      "You are a GTM analyst assistant. Given an account's signal/CRM context and its known " +
+      "contacts, rank the contacts by who a sales rep should reach out to first, and write a " +
+      "short 1-2 sentence reason for each — grounded only in the signals/CRM state given, never " +
+      "invented detail. Rank 1 is the top recommendation; every contact gets a distinct rank.\n\n" +
+      "Respond with EXACTLY one block per contact, in this exact format and nothing else:\n" +
+      "### <contact id>\nRank: <integer>\n<1-2 sentence reason>\n\n" +
+      "Use the literal id given after [[CONTACT ...]] as the header. Include a block for every " +
+      "contact listed.",
+    messages: [
+      {
+        role: "user",
+        content: `${buildContext(detail)}\n\nContacts to rank:\n${buildContactBlocks(detail.contacts, detail.primaryContactId)}`,
+      },
+    ],
+  });
+
+  return parseContactRecommendations(extractText(message));
+}
+
 export type OutreachDraft = { subject: string; body: string };
 
 /**
- * Secondary, user-triggered feature: a short editable outreach email draft
- * based on the entity's signals. Purely a writing aid — has no bearing on
- * scoring or classification.
+ * Secondary feature: a short editable outreach email draft for one specific
+ * contact, generated on demand when that contact is opened in the task
+ * modal. Purely a writing aid — has no bearing on scoring or classification.
  */
-export async function generateOutreachDraft(detail: EntityDetail): Promise<OutreachDraft> {
+export async function generateOutreachDraft(
+  detail: EntityDetail,
+  targetContact: EntityDetailContact
+): Promise<OutreachDraft> {
   if (USE_MOCK_CLAUDE) {
     const company = detail.company.name ?? detail.company.domain ?? "there";
     return {
@@ -177,8 +250,7 @@ export async function generateOutreachDraft(detail: EntityDetail): Promise<Outre
     };
   }
 
-  const primaryContact = detail.contacts.find((c) => c.id === detail.primaryContactId);
-  const contactName = primaryContact?.fullName?.split(" ")[0] ?? "there";
+  const contactName = targetContact.fullName?.split(" ")[0] ?? "there";
 
   const message = await anthropic.messages.create({
     model: CLAUDE_MODEL,

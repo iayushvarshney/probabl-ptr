@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { EntityDetailView } from "@/components/EntityDetailView";
-import { generateEntitySummary } from "@/lib/claude-summary";
+import { generateContactRecommendations, generateEntitySummary } from "@/lib/claude-summary";
+import { saveContactOutreachRecommendations } from "@/lib/contacts";
 import { getEntityDetail } from "@/lib/entity-detail";
 import { supabase } from "@/lib/supabase";
 
@@ -34,10 +35,34 @@ export default async function EntityDetailPage({
     }
   }
 
-  // Per-signal summaries are generated on demand (see
-  // /api/signals/[id]/summarize), triggered when a signal is opened in the
-  // UI — not here. Generating all of them up front was the page's dominant
-  // cost (measured ~95% of an ~12s load for an entity with a handful of
+  // Same generate-once-and-cache approach for "who to reach out to" — one
+  // combined Claude call ranking all of this entity's contacts (not one
+  // call per contact), so it's cheap enough to run synchronously here.
+  const unrankedContacts = detail.contacts.filter((c) => c.outreachReason == null);
+  if (unrankedContacts.length > 0) {
+    try {
+      const recommendations = await generateContactRecommendations(detail);
+      if (Object.keys(recommendations).length > 0) {
+        await saveContactOutreachRecommendations(recommendations);
+        detail = {
+          ...detail,
+          contacts: detail.contacts.map((c) =>
+            recommendations[c.id]
+              ? { ...c, outreachReason: recommendations[c.id].reason, outreachRank: recommendations[c.id].rank }
+              : c
+          ),
+        };
+      }
+    } catch (err) {
+      console.error("Contact recommendation generation failed for entity", id, err);
+    }
+  }
+
+  // Per-signal summaries and per-contact outreach drafts are generated on
+  // demand (see /api/signals/[id]/summarize and /api/entities/[id]/draft-
+  // outreach), triggered by opening a signal or a contact in the UI — not
+  // here. Generating all of them up front was the page's dominant cost
+  // (measured ~95% of an ~12s load for an entity with a handful of
   // uncached signals), most of which the user would never even look at.
 
   return (

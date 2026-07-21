@@ -6,24 +6,19 @@ import { useEffect, useState } from "react";
 import { Field, Section } from "@/components/ui";
 import { CheckIcon, PlusCircleIcon, SparkleIcon, TrashIcon, XIcon } from "@/components/icons";
 import { formatRelativeTime } from "@/lib/format";
-import type { EntityDetail } from "@/lib/entity-detail";
+import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import type { HubSpotOwner, HubSpotTaskPriority, HubSpotTaskType } from "@/lib/hubspot";
 import {
   RELATIONSHIP_STATE_BADGE_CLASSES,
   RELATIONSHIP_STATE_LABELS,
 } from "@/lib/relationship-state";
 
-function defaultTaskTitle(detail: EntityDetail): string {
+function defaultTaskTitle(detail: EntityDetail, contact: EntityDetailContact): string {
   const company = detail.company.name ?? detail.company.domain ?? "this account";
-  return detail.topReason ? `${company}: ${detail.topReason}` : `Follow up with ${company}`;
-}
-
-function defaultNotes(detail: EntityDetail): string {
-  if (detail.claudeSummary) return detail.claudeSummary;
-  const label = RELATIONSHIP_STATE_LABELS[detail.relationshipState];
+  const name = contactLabel(contact);
   return detail.topReason
-    ? `${detail.topReason}. Classified as ${label}.`
-    : `Classified as ${label}.`;
+    ? `${name} at ${company}: ${detail.topReason}`
+    : `Follow up with ${name} at ${company}`;
 }
 
 function addBusinessDays(start: Date, days: number): Date {
@@ -50,38 +45,44 @@ function ownerLabel(owner: HubSpotOwner): string {
   return name || owner.email || owner.id;
 }
 
+function sortByOutreachRank(contacts: EntityDetailContact[]): EntityDetailContact[] {
+  return [...contacts].sort((a, b) => {
+    const rankA = a.outreachRank ?? Number.MAX_SAFE_INTEGER;
+    const rankB = b.outreachRank ?? Number.MAX_SAFE_INTEGER;
+    return rankA - rankB;
+  });
+}
+
 export function EntityDetailView({ detail: initialDetail }: { detail: EntityDetail }) {
   const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
-  const [taskTitle, setTaskTitle] = useState(() => defaultTaskTitle(initialDetail));
-  const [taskType, setTaskType] = useState<HubSpotTaskType>("TODO");
-  const [priority, setPriority] = useState<HubSpotTaskPriority | "">("");
-  const [ownerId, setOwnerId] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [notes, setNotes] = useState(() => defaultNotes(initialDetail));
 
   const [owners, setOwners] = useState<HubSpotOwner[]>([]);
   const [ownersLoading, setOwnersLoading] = useState(true);
   const [ownersError, setOwnersError] = useState<string | null>(null);
 
-  const [isPushing, setIsPushing] = useState(false);
-  const [pushError, setPushError] = useState<string | null>(null);
-  const [pushTaskUrl, setPushTaskUrl] = useState<string | null>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [isDrafting, setIsDrafting] = useState(false);
-  const [draftError, setDraftError] = useState<string | null>(null);
 
   const [activeSignalId, setActiveSignalId] = useState<string | null>(null);
   const [loadingSignalId, setLoadingSignalId] = useState<string | null>(null);
   const [signalSummaryError, setSignalSummaryError] = useState<string | null>(null);
 
-  // Fill in "now"-dependent defaults only after mount, so server- and
-  // client-rendered HTML match on first paint (avoids a hydration mismatch).
-  useEffect(() => {
-    setDueDate(defaultDueDateThreeBusinessDays());
-  }, []);
+  // Per-contact task modal state — reset each time a different contact is
+  // opened (see openContactModal).
+  const [activeContactId, setActiveContactId] = useState<string | null>(null);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskType, setTaskType] = useState<HubSpotTaskType>("TODO");
+  const [priority, setPriority] = useState<HubSpotTaskPriority | "">("");
+  const [ownerId, setOwnerId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [isPushing, setIsPushing] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [pushedTaskUrl, setPushedTaskUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,8 +115,50 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   }, [owners, detail.defaultOwnerId, ownerId]);
 
   const companyTitle = detail.company.name ?? detail.company.domain ?? "Unknown company";
+  const activeContact = detail.contacts.find((c) => c.id === activeContactId) ?? null;
+  const activePush = activeContact
+    ? detail.pushes.find((p) => p.contactId === activeContact.id) ?? null
+    : null;
+
+  function openContactModal(contact: EntityDetailContact) {
+    setActiveContactId(contact.id);
+    setPushError(null);
+    setPushedTaskUrl(null);
+    setDraftError(null);
+    setTaskTitle(defaultTaskTitle(detail, contact));
+    setTaskType("TODO");
+    setPriority("");
+    setOwnerId(
+      detail.defaultOwnerId && owners.some((o) => o.id === detail.defaultOwnerId)
+        ? detail.defaultOwnerId
+        : ""
+    );
+    setDueDate(defaultDueDateThreeBusinessDays());
+    setNotes(contact.outreachReason ?? "");
+
+    const existingPush = detail.pushes.find((p) => p.contactId === contact.id);
+    if (existingPush) return; // already pushed — modal shows the push info, no draft needed
+
+    setIsDrafting(true);
+    fetch(`/api/entities/${detail.id}/draft-outreach`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId: contact.id }),
+    })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Failed to draft outreach");
+        setTaskTitle(json.draft.subject);
+        setNotes(json.draft.body);
+      })
+      .catch((err) => {
+        setDraftError(err instanceof Error ? err.message : "Failed to draft outreach");
+      })
+      .finally(() => setIsDrafting(false));
+  }
 
   async function handlePush() {
+    if (!activeContact) return;
     setIsPushing(true);
     setPushError(null);
     try {
@@ -123,6 +166,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          contactId: activeContact.id,
           subject: taskTitle,
           body: notes,
           dueDate,
@@ -133,39 +177,27 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Push failed");
-      setPushTaskUrl(json.taskUrl ?? null);
+      setPushedTaskUrl(json.taskUrl ?? null);
       setDetail((prev) => ({
         ...prev,
         status: "pushed",
-        push: {
-          hubspotTaskId: json.push.hubspot_task_id,
-          taskSubject: json.push.task_subject,
-          taskBody: json.push.task_body,
-          assignee: json.push.assignee,
-          dueDate: json.push.due_date,
-          pushedAt: json.push.pushed_at,
-        },
+        pushes: [
+          ...prev.pushes.filter((p) => p.contactId !== activeContact.id),
+          {
+            contactId: activeContact.id,
+            hubspotTaskId: json.push.hubspot_task_id,
+            taskSubject: json.push.task_subject,
+            taskBody: json.push.task_body,
+            assignee: json.push.assignee,
+            dueDate: json.push.due_date,
+            pushedAt: json.push.pushed_at,
+          },
+        ],
       }));
     } catch (err) {
       setPushError(err instanceof Error ? err.message : "Push failed");
     } finally {
       setIsPushing(false);
-    }
-  }
-
-  async function handleDraftOutreach() {
-    setIsDrafting(true);
-    setDraftError(null);
-    try {
-      const res = await fetch(`/api/entities/${detail.id}/draft-outreach`, { method: "POST" });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Draft failed");
-      setTaskTitle(json.draft.subject);
-      setNotes(json.draft.body);
-    } catch (err) {
-      setDraftError(err instanceof Error ? err.message : "Draft failed");
-    } finally {
-      setIsDrafting(false);
     }
   }
 
@@ -207,6 +239,8 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       setIsDeleting(false);
     }
   }
+
+  const sortedContacts = sortByOutreachRank(detail.contacts);
 
   return (
     <div className="flex flex-col gap-6">
@@ -333,25 +367,82 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
         </div>
       </Section>
 
-      {detail.status === "pushed" && detail.push && (
-        <Section title="Pushed to HubSpot">
-          <p className="text-sm text-zinc-600">
-            Task{" "}
-            {pushTaskUrl ? (
-              <a
-                href={pushTaskUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-xs text-persian-blue hover:underline"
-              >
-                {detail.push.hubspotTaskId}
-              </a>
-            ) : (
-              <span className="font-mono text-xs">{detail.push.hubspotTaskId}</span>
-            )}{" "}
-            created {formatRelativeTime(detail.push.pushedAt)} — &ldquo;{detail.push.taskSubject}
-            &rdquo;
-          </p>
+      {detail.status !== "dismissed" && (
+        <Section title="Who to reach out to">
+          {sortedContacts.length === 0 ? (
+            <p className="text-sm text-zinc-400">No known contacts yet.</p>
+          ) : (
+            <div className="flex flex-col divide-y divide-zinc-100">
+              {sortedContacts.map((contact) => {
+                const pushed = detail.pushes.some((p) => p.contactId === contact.id);
+                return (
+                  <button
+                    key={contact.id}
+                    type="button"
+                    onClick={() => openContactModal(contact)}
+                    className="flex w-full flex-col items-start gap-1 py-3 text-left hover:bg-zinc-50"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-zinc-800">
+                        {contactLabel(contact)}
+                      </span>
+                      {contact.hubspotContactId ? (
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                          in HubSpot
+                        </span>
+                      ) : (
+                        <span className="rounded bg-persian-blue/5 px-1.5 py-0.5 text-[11px] font-medium text-persian-blue">
+                          net-new
+                        </span>
+                      )}
+                      {pushed && (
+                        <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          <CheckIcon className="h-3 w-3" />
+                          Task created
+                        </span>
+                      )}
+                    </div>
+                    {contact.outreachReason ? (
+                      <p className="text-sm text-zinc-600">{contact.outreachReason}</p>
+                    ) : (
+                      <p className="text-xs text-zinc-400">No recommendation yet.</p>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {detail.pushes.length > 0 && (
+        <Section title={`Pushed to HubSpot (${detail.pushes.length})`}>
+          <ul className="flex flex-col gap-2 text-sm text-zinc-600">
+            {detail.pushes.map((push) => {
+              const contact = detail.contacts.find((c) => c.id === push.contactId);
+              return (
+                <li key={push.hubspotTaskId ?? push.pushedAt}>
+                  <span className="font-medium text-zinc-800">
+                    {contact ? contactLabel(contact) : "Unknown contact"}
+                  </span>{" "}
+                  — task{" "}
+                  {pushedTaskUrl && activeContact?.id === push.contactId ? (
+                    <a
+                      href={pushedTaskUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs text-persian-blue hover:underline"
+                    >
+                      {push.hubspotTaskId}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-xs">{push.hubspotTaskId}</span>
+                  )}{" "}
+                  created {formatRelativeTime(push.pushedAt)} — &ldquo;{push.taskSubject}&rdquo;
+                </li>
+              );
+            })}
+          </ul>
         </Section>
       )}
 
@@ -361,118 +452,17 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
         </Section>
       )}
 
-      {detail.status === "pending" && (
-        <Section title="Create Task in HubSpot">
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-zinc-500">Task details</span>
-              <button
-                type="button"
-                onClick={handleDraftOutreach}
-                disabled={isDrafting}
-                className="flex items-center gap-1.5 rounded-full border border-persian-blue/30 px-3 py-1 text-xs font-medium text-persian-blue hover:bg-persian-blue/5 disabled:opacity-50"
-              >
-                <SparkleIcon className="h-3.5 w-3.5" />
-                {isDrafting ? "Drafting…" : "Draft outreach with Claude"}
-              </button>
-            </div>
-            {draftError && <p className="text-sm text-red-600">{draftError}</p>}
-
-            <Field label="Task Title">
-              <input
-                type="text"
-                value={taskTitle}
-                onChange={(e) => setTaskTitle(e.target.value)}
-                className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
-              />
-            </Field>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Field label="Task Type">
-                <select
-                  value={taskType}
-                  onChange={(e) => setTaskType(e.target.value as HubSpotTaskType)}
-                  className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
-                >
-                  <option value="TODO">To-Do</option>
-                  <option value="CALL">Call</option>
-                  <option value="EMAIL">Email</option>
-                </select>
-              </Field>
-              <Field label="Priority">
-                <select
-                  value={priority}
-                  onChange={(e) => setPriority(e.target.value as HubSpotTaskPriority | "")}
-                  className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
-                >
-                  <option value="">None</option>
-                  <option value="LOW">Low</option>
-                  <option value="MEDIUM">Medium</option>
-                  <option value="HIGH">High</option>
-                </select>
-              </Field>
-              <Field label="Assigned to">
-                <select
-                  value={ownerId}
-                  onChange={(e) => setOwnerId(e.target.value)}
-                  disabled={ownersLoading}
-                  className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none disabled:opacity-50"
-                >
-                  <option value="">{ownersLoading ? "Loading…" : "Select an owner"}</option>
-                  {owners.map((owner) => (
-                    <option key={owner.id} value={owner.id}>
-                      {ownerLabel(owner)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            {ownersError && (
-              <p className="text-sm text-red-600">Couldn&rsquo;t load owners: {ownersError}</p>
-            )}
-
-            <Field label="Due date">
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none sm:w-48"
-              />
-            </Field>
-
-            <Field label="Notes">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                rows={4}
-                className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
-              />
-            </Field>
-
-            {pushError && <p className="text-sm text-red-600">{pushError}</p>}
-
-            <div className="mt-1 flex gap-3">
-              <button
-                type="button"
-                onClick={handlePush}
-                disabled={isPushing || !taskTitle || !ownerId}
-                className="flex items-center gap-1.5 rounded-full bg-sea-buckthorn px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                <PlusCircleIcon className="h-4 w-4" />
-                {isPushing ? "Creating…" : "Create Task in HubSpot"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsConfirmingDelete(true)}
-                disabled={isPushing}
-                className="flex items-center gap-1.5 rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
-              >
-                <TrashIcon className="h-4 w-4" />
-                Delete from Queue
-              </button>
-            </div>
-          </div>
-        </Section>
+      {detail.status !== "dismissed" && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setIsConfirmingDelete(true)}
+            className="flex items-center gap-1.5 rounded-full border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+          >
+            <TrashIcon className="h-4 w-4" />
+            Delete from Queue
+          </button>
+        </div>
       )}
 
       {isConfirmingDelete && (
@@ -560,10 +550,160 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
           </div>
         </div>
       )}
+
+      {activeContact && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 px-4 py-8"
+          onClick={() => setActiveContactId(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900">
+                  {contactLabel(activeContact)}
+                </h2>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  {activeContact.email ?? "no email"} ·{" "}
+                  {activeContact.hubspotContactId ? "in HubSpot" : "not yet in HubSpot"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveContactId(null)}
+                className="text-zinc-400 hover:text-zinc-600"
+              >
+                <XIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            {activeContact.outreachReason && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg bg-zinc-50 p-3">
+                <SparkleIcon className="mt-0.5 h-4 w-4 shrink-0 text-persian-blue" />
+                <p className="text-sm text-zinc-700">{activeContact.outreachReason}</p>
+              </div>
+            )}
+
+            {activePush ? (
+              <div className="rounded-lg border border-zinc-200 p-3">
+                <p className="text-sm text-zinc-600">
+                  Task{" "}
+                  {pushedTaskUrl ? (
+                    <a
+                      href={pushedTaskUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-xs text-persian-blue hover:underline"
+                    >
+                      {activePush.hubspotTaskId}
+                    </a>
+                  ) : (
+                    <span className="font-mono text-xs">{activePush.hubspotTaskId}</span>
+                  )}{" "}
+                  created {formatRelativeTime(activePush.pushedAt)} — &ldquo;
+                  {activePush.taskSubject}&rdquo;
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {draftError && <p className="text-sm text-red-600">{draftError}</p>}
+
+                <Field label="Task Title">
+                  <input
+                    type="text"
+                    value={taskTitle}
+                    disabled={isDrafting}
+                    onChange={(e) => setTaskTitle(e.target.value)}
+                    className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none disabled:opacity-50"
+                  />
+                </Field>
+
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <Field label="Task Type">
+                    <select
+                      value={taskType}
+                      onChange={(e) => setTaskType(e.target.value as HubSpotTaskType)}
+                      className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
+                    >
+                      <option value="TODO">To-Do</option>
+                      <option value="CALL">Call</option>
+                      <option value="EMAIL">Email</option>
+                    </select>
+                  </Field>
+                  <Field label="Priority">
+                    <select
+                      value={priority}
+                      onChange={(e) => setPriority(e.target.value as HubSpotTaskPriority | "")}
+                      className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none"
+                    >
+                      <option value="">None</option>
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                    </select>
+                  </Field>
+                  <Field label="Assigned to">
+                    <select
+                      value={ownerId}
+                      onChange={(e) => setOwnerId(e.target.value)}
+                      disabled={ownersLoading}
+                      className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none disabled:opacity-50"
+                    >
+                      <option value="">{ownersLoading ? "Loading…" : "Select an owner"}</option>
+                      {owners.map((owner) => (
+                        <option key={owner.id} value={owner.id}>
+                          {ownerLabel(owner)}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+                {ownersError && (
+                  <p className="text-sm text-red-600">Couldn&rsquo;t load owners: {ownersError}</p>
+                )}
+
+                <Field label="Due date">
+                  <input
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none sm:w-48"
+                  />
+                </Field>
+
+                <Field label="Notes">
+                  <textarea
+                    value={isDrafting ? "Drafting…" : notes}
+                    disabled={isDrafting}
+                    onChange={(e) => setNotes(e.target.value)}
+                    rows={5}
+                    className="w-full rounded border border-zinc-300 px-3 py-1.5 text-sm focus:border-persian-blue focus:outline-none disabled:opacity-50"
+                  />
+                </Field>
+
+                {pushError && <p className="text-sm text-red-600">{pushError}</p>}
+
+                <div className="mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handlePush}
+                    disabled={isPushing || isDrafting || !taskTitle || !ownerId}
+                    className="flex items-center gap-1.5 rounded-full bg-sea-buckthorn px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    <PlusCircleIcon className="h-4 w-4" />
+                    {isPushing ? "Creating…" : "Create Task in HubSpot"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 
 function Flag({ label }: { label: string }) {
   return (

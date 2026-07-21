@@ -13,6 +13,11 @@ export type EntityDetailContact = {
   email: string | null;
   fullName: string | null;
   hubspotContactId: string | null;
+  /** Claude's "why reach out to this person" reasoning, generated once per
+   * entity view and cached — same generate-once pattern as signalSummary. */
+  outreachReason: string | null;
+  /** 1 = Claude's top recommendation; null if not yet generated. */
+  outreachRank: number | null;
 };
 
 export type EntityDetailSignal = {
@@ -28,6 +33,7 @@ export type EntityDetailSignal = {
 };
 
 export type EntityDetailPush = {
+  contactId: string | null;
   hubspotTaskId: string | null;
   taskSubject: string | null;
   taskBody: string | null;
@@ -55,15 +61,16 @@ export type EntityDetail = {
   };
   contacts: EntityDetailContact[];
   signals: EntityDetailSignal[];
-  /** The contact tied to the most recent signal — the natural "who to
-   * reach out to" for the push action. Falls back to the first known
-   * contact if signals are somehow missing. */
+  /** The contact tied to the most recent signal — used only as a fallback
+   * ordering hint if outreach ranking hasn't been generated yet. */
   primaryContactId: string | null;
   /** The company's current HubSpot owner, if any — pre-fills "Assigned to"
    * on the task-creation form. Null if the company isn't in HubSpot, has no
    * owner set, or the lookup fails. */
   defaultOwnerId: string | null;
-  push: EntityDetailPush | null;
+  /** One push per (entity, contact) pair — a rep can push a task for one
+   * contact and later push a different one for the same company. */
+  pushes: EntityDetailPush[];
 };
 
 function asList<T>(value: T | T[] | null): T[] {
@@ -87,12 +94,39 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     .single();
   if (companyError) throw companyError;
 
-  const { data: contactRows, error: contactsError } = await supabase
-    .from("contacts")
-    .select("*")
-    .eq("company_id", entity.company_id)
-    .order("updated_at", { ascending: false });
+  const CONTACT_COLUMNS = "*, outreach_reason, outreach_rank";
+  let contactRows: unknown;
+  let contactsError: { code?: string; message?: string } | null;
+  {
+    const first = await supabase
+      .from("contacts")
+      .select(CONTACT_COLUMNS)
+      .eq("company_id", entity.company_id)
+      .order("updated_at", { ascending: false });
+    contactRows = first.data;
+    contactsError = first.error;
+  }
+  let hasOutreachColumns = true;
+  if (contactsError && isMissingColumnError(contactsError)) {
+    hasOutreachColumns = false;
+    const fallback = await supabase
+      .from("contacts")
+      .select("*")
+      .eq("company_id", entity.company_id)
+      .order("updated_at", { ascending: false });
+    contactRows = fallback.data;
+    contactsError = fallback.error;
+  }
   if (contactsError) throw contactsError;
+
+  type RawContact = {
+    id: string;
+    email: string | null;
+    full_name: string | null;
+    hubspot_contact_id: string | null;
+    outreach_reason?: string | null;
+    outreach_rank?: number | null;
+  };
 
   const SIGNAL_COLUMNS =
     "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload, signal_summary";
@@ -151,20 +185,59 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     }))
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
 
-  const contacts: EntityDetailContact[] = (contactRows ?? []).map((c) => ({
+  const contacts: EntityDetailContact[] = ((contactRows ?? []) as RawContact[]).map((c) => ({
     id: c.id,
     email: c.email,
     fullName: c.full_name,
     hubspotContactId: c.hubspot_contact_id,
+    outreachReason: hasOutreachColumns ? c.outreach_reason ?? null : null,
+    outreachRank: hasOutreachColumns ? c.outreach_rank ?? null : null,
   }));
 
-  const { data: pushRow } = await supabase
-    .from("pushes")
-    .select("*")
-    .eq("entity_id", entityId)
-    .order("pushed_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const PUSH_COLUMNS = "*, contact_id";
+  let pushRows: unknown;
+  let pushesError: { code?: string; message?: string } | null;
+  {
+    const first = await supabase
+      .from("pushes")
+      .select(PUSH_COLUMNS)
+      .eq("entity_id", entityId)
+      .order("pushed_at", { ascending: false });
+    pushRows = first.data;
+    pushesError = first.error;
+  }
+  let hasPushContactColumn = true;
+  if (pushesError && isMissingColumnError(pushesError)) {
+    hasPushContactColumn = false;
+    const fallback = await supabase
+      .from("pushes")
+      .select("*")
+      .eq("entity_id", entityId)
+      .order("pushed_at", { ascending: false });
+    pushRows = fallback.data;
+    pushesError = fallback.error;
+  }
+  if (pushesError) throw pushesError;
+
+  type RawPush = {
+    contact_id?: string | null;
+    hubspot_task_id: string | null;
+    task_subject: string | null;
+    task_body: string | null;
+    assignee: string | null;
+    due_date: string | null;
+    pushed_at: string;
+  };
+
+  const pushes: EntityDetailPush[] = ((pushRows ?? []) as RawPush[]).map((p) => ({
+    contactId: hasPushContactColumn ? p.contact_id ?? null : null,
+    hubspotTaskId: p.hubspot_task_id,
+    taskSubject: p.task_subject,
+    taskBody: p.task_body,
+    assignee: p.assignee,
+    dueDate: p.due_date,
+    pushedAt: p.pushed_at,
+  }));
 
   let defaultOwnerId: string | null = null;
   if (company.hubspot_company_id) {
@@ -196,15 +269,6 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     signals,
     primaryContactId: signals[0]?.contactId ?? contacts[0]?.id ?? null,
     defaultOwnerId,
-    push: pushRow
-      ? {
-          hubspotTaskId: pushRow.hubspot_task_id,
-          taskSubject: pushRow.task_subject,
-          taskBody: pushRow.task_body,
-          assignee: pushRow.assignee,
-          dueDate: pushRow.due_date,
-          pushedAt: pushRow.pushed_at,
-        }
-      : null,
+    pushes,
   };
 }
