@@ -1,3 +1,4 @@
+import { isMissingColumnError } from "@/lib/db-errors";
 import { getCompanyOwnerId } from "@/lib/hubspot";
 import { supabase } from "@/lib/supabase";
 import type {
@@ -23,6 +24,7 @@ export type EntityDetailSignal = {
   occurredAt: string;
   contactId: string | null;
   rawPayload: Record<string, unknown>;
+  signalSummary: string | null;
 };
 
 export type EntityDetailPush = {
@@ -92,10 +94,32 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     .order("updated_at", { ascending: false });
   if (contactsError) throw contactsError;
 
-  const { data: links, error: linksError } = await supabase
-    .from("entity_signals")
-    .select("signals(id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload)")
-    .eq("entity_id", entityId);
+  const SIGNAL_COLUMNS =
+    "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload, signal_summary";
+  const SIGNAL_COLUMNS_WITHOUT_SUMMARY =
+    "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload";
+
+  let links: unknown;
+  let linksError: { code?: string; message?: string } | null;
+  {
+    const first = await supabase
+      .from("entity_signals")
+      .select(`signals(${SIGNAL_COLUMNS})`)
+      .eq("entity_id", entityId);
+    links = first.data;
+    linksError = first.error;
+  }
+
+  let hasSignalSummaryColumn = true;
+  if (linksError && isMissingColumnError(linksError)) {
+    hasSignalSummaryColumn = false;
+    const fallback = await supabase
+      .from("entity_signals")
+      .select(`signals(${SIGNAL_COLUMNS_WITHOUT_SUMMARY})`)
+      .eq("entity_id", entityId);
+    links = fallback.data;
+    linksError = fallback.error;
+  }
   if (linksError) throw linksError;
 
   type RawSignal = {
@@ -107,6 +131,7 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     occurred_at: string;
     contact_id: string | null;
     raw_payload: Record<string, unknown>;
+    signal_summary?: string | null;
   };
 
   const signals: EntityDetailSignal[] = ((links ?? []) as unknown as Array<{
@@ -122,6 +147,7 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
       occurredAt: s.occurred_at,
       contactId: s.contact_id,
       rawPayload: s.raw_payload,
+      signalSummary: hasSignalSummaryColumn ? s.signal_summary ?? null : null,
     }))
     .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
 

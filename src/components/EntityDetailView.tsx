@@ -275,8 +275,8 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       <Section title={`Signals (${detail.signals.length})`}>
         <div className="flex flex-col divide-y divide-zinc-100">
           {detail.signals.map((signal) => (
-            <details key={signal.id} className="group py-2.5">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm">
+            <div key={signal.id} className="py-2.5">
+              <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="flex items-center gap-2">
                   <span className="font-medium text-zinc-800">
                     {signal.signalType.replace(/_/g, " ")}
@@ -292,11 +292,21 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
                 <span className="shrink-0 text-xs text-zinc-400">
                   {formatRelativeTime(signal.occurredAt)}
                 </span>
-              </summary>
-              <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-3 text-xs text-zinc-600">
-                {JSON.stringify(signal.rawPayload, null, 2)}
-              </pre>
-            </details>
+              </div>
+              {signal.signalSummary ? (
+                <p className="mt-1.5 text-sm text-zinc-600">{signal.signalSummary}</p>
+              ) : (
+                <p className="mt-1.5 text-xs text-zinc-400">No summary yet.</p>
+              )}
+              <details className="group mt-1.5">
+                <summary className="cursor-pointer list-none text-xs text-zinc-400 hover:text-zinc-600">
+                  Raw payload
+                </summary>
+                <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-3 text-xs text-zinc-600">
+                  {JSON.stringify(signal.rawPayload, null, 2)}
+                </pre>
+              </details>
+            </div>
           ))}
         </div>
       </Section>

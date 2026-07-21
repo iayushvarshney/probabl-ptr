@@ -75,6 +75,92 @@ export async function generateEntitySummary(detail: EntityDetail): Promise<strin
   return extractText(message);
 }
 
+export type SignalForSummary = {
+  id: string;
+  source: string;
+  signalType: string;
+  originChannel: string;
+  campaign: string | null;
+  occurredAt: string;
+  rawPayload: Record<string, unknown>;
+};
+
+const SIGNAL_SUMMARY_CHUNK_SIZE = 15;
+
+function buildSignalBlocks(signals: SignalForSummary[]): string {
+  return signals
+    .map(
+      (s) => `[[SIGNAL ${s.id}]]
+Type: ${s.signalType}
+Source: ${s.source}
+Channel: ${s.originChannel}
+Campaign: ${s.campaign ?? "none"}
+Occurred at: ${s.occurredAt}
+Raw payload: ${JSON.stringify(s.rawPayload)}`
+    )
+    .join("\n\n");
+}
+
+function parseSignalSummaries(raw: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  const blocks = raw.split(/^###\s+/m).filter((b) => b.trim());
+  for (const block of blocks) {
+    const [idLine, ...rest] = block.split("\n");
+    const id = idLine.trim();
+    const summary = rest.join("\n").trim();
+    if (id && summary) result[id] = summary;
+  }
+  return result;
+}
+
+/**
+ * Short (2-3 line) per-signal summaries for the entity detail page's signal
+ * list — what this one signal was, who it involved, and any notable
+ * enrichment detail from its raw payload. Batched into one Claude call per
+ * chunk (rather than one call per signal) for cost/latency; results are
+ * cached by the caller (signals.signal_summary) so this only runs once per
+ * signal, ever.
+ */
+export async function generateSignalSummaries(
+  signals: SignalForSummary[],
+  companyName: string
+): Promise<Record<string, string>> {
+  if (signals.length === 0) return {};
+
+  if (USE_MOCK_CLAUDE) {
+    return Object.fromEntries(
+      signals.map((s) => [
+        s.id,
+        `${s.signalType.replace(/_/g, " ")} via ${s.originChannel}${
+          s.campaign ? ` (campaign: ${s.campaign})` : ""
+        }. [mock signal summary]`,
+      ])
+    );
+  }
+
+  const result: Record<string, string> = {};
+  for (let i = 0; i < signals.length; i += SIGNAL_SUMMARY_CHUNK_SIZE) {
+    const chunk = signals.slice(i, i + SIGNAL_SUMMARY_CHUNK_SIZE);
+    const message = await anthropic.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: Math.min(4096, 150 * chunk.length + 200),
+      system:
+        `You are a GTM analyst assistant. For EACH signal below (about ${companyName}), write a ` +
+        "short 2-3 line plain-language summary of just that one signal — who/what/where, and any " +
+        "notable enrichment detail present in its raw payload (job title, page/URL visited, " +
+        "campaign, developer or company attributes, etc). Describe only that signal; do not " +
+        "compare signals, editorialize about ranking/scoring, or recommend actions.\n\n" +
+        "Respond with EXACTLY one block per signal, in this exact format and nothing else:\n" +
+        "### <signal id>\n<2-3 line summary>\n\n" +
+        "Use the literal id given after [[SIGNAL ...]] as the header. Include a block for every " +
+        "signal listed, in the same order given.",
+      messages: [{ role: "user", content: buildSignalBlocks(chunk) }],
+    });
+    Object.assign(result, parseSignalSummaries(extractText(message)));
+  }
+  return result;
+}
+
 export type OutreachDraft = { subject: string; body: string };
 
 /**

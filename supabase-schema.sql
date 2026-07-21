@@ -146,3 +146,11 @@ create table if not exists settings (
 );
 create unique index if not exists idx_settings_section_version on settings(section, config_version);
 create index if not exists idx_settings_section_latest on settings(section, config_version desc);
+
+-- ─────────────────────────────────────────────────────────────
+-- signals: per-signal Claude summary (2-3 lines), generated once the first
+-- time an entity's detail page is viewed and cached here — same
+-- generate-once-and-cache pattern as entities.claude_summary. Safe to
+-- re-run (idempotent).
+-- ─────────────────────────────────────────────────────────────
+alter table signals add column if not exists signal_summary text;
