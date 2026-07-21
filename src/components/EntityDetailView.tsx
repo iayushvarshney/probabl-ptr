@@ -73,6 +73,10 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
 
+  const [activeSignalId, setActiveSignalId] = useState<string | null>(null);
+  const [loadingSignalId, setLoadingSignalId] = useState<string | null>(null);
+  const [signalSummaryError, setSignalSummaryError] = useState<string | null>(null);
+
   // Fill in "now"-dependent defaults only after mount, so server- and
   // client-rendered HTML match on first paint (avoids a hydration mismatch).
   useEffect(() => {
@@ -164,6 +168,31 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       setIsDrafting(false);
     }
   }
+
+  function openSignalModal(signal: EntityDetail["signals"][number]) {
+    setActiveSignalId(signal.id);
+    setSignalSummaryError(null);
+    if (signal.signalSummary || loadingSignalId === signal.id) return;
+
+    setLoadingSignalId(signal.id);
+    fetch(`/api/signals/${signal.id}/summarize`, { method: "POST" })
+      .then(async (res) => {
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.error ?? "Failed to summarize signal");
+        setDetail((prev) => ({
+          ...prev,
+          signals: prev.signals.map((s) =>
+            s.id === signal.id ? { ...s, signalSummary: json.summary } : s
+          ),
+        }));
+      })
+      .catch((err) => {
+        setSignalSummaryError(err instanceof Error ? err.message : "Failed to summarize signal");
+      })
+      .finally(() => setLoadingSignalId(null));
+  }
+
+  const activeSignal = detail.signals.find((s) => s.id === activeSignalId) ?? null;
 
   async function handleDeleteConfirmed() {
     setIsDeleting(true);
@@ -275,38 +304,31 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       <Section title={`Signals (${detail.signals.length})`}>
         <div className="flex flex-col divide-y divide-zinc-100">
           {detail.signals.map((signal) => (
-            <div key={signal.id} className="py-2.5">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="font-medium text-zinc-800">
-                    {signal.signalType.replace(/_/g, " ")}
-                  </span>
-                  <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
-                    {signal.originChannel}
-                  </span>
-                  <span className="text-[11px] uppercase text-zinc-400">{signal.source}</span>
-                  {signal.campaign && (
-                    <span className="text-xs text-zinc-400">· {signal.campaign}</span>
-                  )}
+            <button
+              key={signal.id}
+              type="button"
+              onClick={() => openSignalModal(signal)}
+              className="flex w-full items-center justify-between gap-3 py-2.5 text-left text-sm hover:bg-zinc-50"
+            >
+              <span className="flex items-center gap-2">
+                <span className="font-medium text-zinc-800">
+                  {signal.signalType.replace(/_/g, " ")}
                 </span>
-                <span className="shrink-0 text-xs text-zinc-400">
-                  {formatRelativeTime(signal.occurredAt)}
+                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                  {signal.originChannel}
                 </span>
-              </div>
-              {signal.signalSummary ? (
-                <p className="mt-1.5 text-sm text-zinc-600">{signal.signalSummary}</p>
-              ) : (
-                <p className="mt-1.5 text-xs text-zinc-400">No summary yet.</p>
-              )}
-              <details className="group mt-1.5">
-                <summary className="cursor-pointer list-none text-xs text-zinc-400 hover:text-zinc-600">
-                  Raw payload
-                </summary>
-                <pre className="mt-2 overflow-x-auto rounded bg-zinc-50 p-3 text-xs text-zinc-600">
-                  {JSON.stringify(signal.rawPayload, null, 2)}
-                </pre>
-              </details>
-            </div>
+                <span className="text-[11px] uppercase text-zinc-400">{signal.source}</span>
+                {signal.campaign && (
+                  <span className="text-xs text-zinc-400">· {signal.campaign}</span>
+                )}
+                {signal.signalSummary && (
+                  <SparkleIcon className="h-3.5 w-3.5 text-persian-blue/50" />
+                )}
+              </span>
+              <span className="shrink-0 text-xs text-zinc-400">
+                {formatRelativeTime(signal.occurredAt)}
+              </span>
+            </button>
           ))}
         </div>
       </Section>
@@ -481,6 +503,60 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
                 {isDeleting ? "Deleting…" : "Yes"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeSignal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setActiveSignalId(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-900">
+                  {activeSignal.signalType.replace(/_/g, " ")}
+                </h2>
+                <p className="mt-0.5 text-xs text-zinc-400">
+                  {activeSignal.originChannel} · {activeSignal.source.toUpperCase()}
+                  {activeSignal.campaign && ` · ${activeSignal.campaign}`} ·{" "}
+                  {formatRelativeTime(activeSignal.occurredAt)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSignalId(null)}
+                className="text-zinc-400 hover:text-zinc-600"
+              >
+                <XIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4 flex items-start gap-2 rounded-lg bg-zinc-50 p-3">
+              <SparkleIcon className="mt-0.5 h-4 w-4 shrink-0 text-persian-blue" />
+              {loadingSignalId === activeSignal.id ? (
+                <p className="text-sm text-zinc-400">Summarizing…</p>
+              ) : activeSignal.signalSummary ? (
+                <p className="text-sm text-zinc-700">{activeSignal.signalSummary}</p>
+              ) : signalSummaryError ? (
+                <p className="text-sm text-red-600">{signalSummaryError}</p>
+              ) : (
+                <p className="text-sm text-zinc-400">No summary yet.</p>
+              )}
+            </div>
+
+            <details className="group">
+              <summary className="cursor-pointer list-none text-xs text-zinc-400 hover:text-zinc-600">
+                Raw payload
+              </summary>
+              <pre className="mt-2 max-h-64 overflow-auto rounded bg-zinc-50 p-3 text-xs text-zinc-600">
+                {JSON.stringify(activeSignal.rawPayload, null, 2)}
+              </pre>
+            </details>
           </div>
         </div>
       )}
