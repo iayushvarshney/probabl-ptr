@@ -16,26 +16,13 @@ export async function HEAD() {
 }
 
 export async function POST(request: Request) {
-  // TEMPORARY diagnostic logging — Reo's own "test webhook" UI reports
-  // "Your Webhook URL is not working" even though curl tests against every
-  // known auth mechanism (header/Bearer/query param) succeed. Log the raw
-  // request shape BEFORE the auth check short-circuits it, so we can see
-  // what Reo's test actually sends even if it fails auth. Remove once
-  // diagnosed.
-  const bodyText = await request.text();
-  console.log("[reo webhook][diag] headers:", JSON.stringify(Object.fromEntries(request.headers.entries())));
-  console.log("[reo webhook][diag] url:", request.url);
-  console.log("[reo webhook][diag] body:", bodyText || "(empty)");
-
   if (!isAuthorizedWebhook(request, process.env.REO_WEBHOOK_SECRET)) {
-    console.log("[reo webhook][diag] auth failed — returning 401");
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   let rawPayload: Record<string, unknown>;
   try {
-    rawPayload = bodyText ? (JSON.parse(bodyText) as Record<string, unknown>) : {};
-    if (!bodyText) throw new Error("empty body");
+    rawPayload = (await request.json()) as Record<string, unknown>;
   } catch {
     // Empty/non-JSON body — most likely a connectivity test ping rather
     // than a real Activity. Authentication already succeeded, so
