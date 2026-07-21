@@ -55,7 +55,17 @@ function inferOriginChannel(
  * Maps a raw PostHog webhook payload to our IncomingSignal shape. Payload
  * field locations aren't fully confirmed yet, so this probes several
  * plausible paths and always preserves the full raw payload for later
- * inspection. Returns null only when no person can be identified at all.
+ * inspection.
+ *
+ * Requires a real, identifiable email — anonymous events (no email; only
+ * PostHog's own generated distinct_id) are dropped rather than turned into
+ * a signal. Without this, every anonymous $pageview/autocapture event from
+ * the site's own traffic would still need *some* person_identifier and
+ * company_domain, and the only thing available for those is PostHog's
+ * `$host` property — which is the hostname of the page the visitor was on,
+ * not their company. That produced entities like "blog.probabl.ai" as if
+ * it were a prospect account. Requiring an email avoids that entirely: it's
+ * the one signal that's actually about a real, identifiable person.
  */
 export function normalizePostHogSignal(
   rawPayload: Record<string, unknown>
@@ -70,10 +80,7 @@ export function normalizePostHogSignal(
     personProperties["email"],
     rawPayload["email"]
   );
-  const distinctId = firstString(rawPayload["distinct_id"], person["distinct_id"]);
-
-  const personIdentifier = email ?? distinctId;
-  if (!personIdentifier) return null;
+  if (!email) return null;
 
   const eventName = firstString(rawPayload["event"], rawPayload["event_name"]) ?? "";
   const signalType = EVENT_SIGNAL_TYPE[eventName] ?? "generic_page_view";
@@ -84,9 +91,9 @@ export function normalizePostHogSignal(
     rawPayload["campaign"]
   );
 
-  const companyDomain =
-    firstString(properties["company_domain"], properties["$host"]) ??
-    domainFromEmail(email);
+  // Only an explicit company_domain property counts — $host (the page's
+  // own hostname) is never a valid proxy for the visitor's company.
+  const companyDomain = firstString(properties["company_domain"]) ?? domainFromEmail(email);
 
   const occurredAt =
     firstString(rawPayload["timestamp"], rawPayload["sent_at"], properties["$time"]) ??
@@ -98,7 +105,7 @@ export function normalizePostHogSignal(
     origin_channel: inferOriginChannel(properties, signalType),
     campaign,
     raw_payload: rawPayload,
-    person_identifier: personIdentifier,
+    person_identifier: email,
     company_domain: companyDomain,
     occurred_at: occurredAt,
   };
