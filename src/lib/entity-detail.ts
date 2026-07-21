@@ -1,6 +1,7 @@
 import { isMissingColumnError } from "@/lib/db-errors";
 import { getCompanyOwnerId } from "@/lib/hubspot";
 import { supabase } from "@/lib/supabase";
+import { timer } from "@/lib/timing";
 import type {
   OriginChannel,
   RelationshipState,
@@ -72,26 +73,37 @@ function asList<T>(value: T | T[] | null): T[] {
 }
 
 export async function getEntityDetail(entityId: string): Promise<EntityDetail | null> {
+  const endTotal = timer(`getEntityDetail total (${entityId})`);
+
+  const endEntity = timer("db: entities select");
   const { data: entity, error: entityError } = await supabase
     .from("entities")
     .select("*")
     .eq("id", entityId)
     .maybeSingle();
+  endEntity();
   if (entityError) throw entityError;
-  if (!entity) return null;
+  if (!entity) {
+    endTotal();
+    return null;
+  }
 
+  const endCompany = timer("db: companies select");
   const { data: company, error: companyError } = await supabase
     .from("companies")
     .select("*")
     .eq("id", entity.company_id)
     .single();
+  endCompany();
   if (companyError) throw companyError;
 
+  const endContacts = timer("db: contacts select");
   const { data: contactRows, error: contactsError } = await supabase
     .from("contacts")
     .select("*")
     .eq("company_id", entity.company_id)
     .order("updated_at", { ascending: false });
+  endContacts();
   if (contactsError) throw contactsError;
 
   const SIGNAL_COLUMNS =
@@ -99,6 +111,7 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   const SIGNAL_COLUMNS_WITHOUT_SUMMARY =
     "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload";
 
+  const endSignals = timer("db: entity_signals+signals select");
   let links: unknown;
   let linksError: { code?: string; message?: string } | null;
   {
@@ -113,13 +126,16 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   let hasSignalSummaryColumn = true;
   if (linksError && isMissingColumnError(linksError)) {
     hasSignalSummaryColumn = false;
+    const endSignalsFallback = timer("db: entity_signals+signals select (fallback, no signal_summary column)");
     const fallback = await supabase
       .from("entity_signals")
       .select(`signals(${SIGNAL_COLUMNS_WITHOUT_SUMMARY})`)
       .eq("entity_id", entityId);
+    endSignalsFallback();
     links = fallback.data;
     linksError = fallback.error;
   }
+  endSignals();
   if (linksError) throw linksError;
 
   type RawSignal = {
@@ -158,6 +174,7 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     hubspotContactId: c.hubspot_contact_id,
   }));
 
+  const endPushes = timer("db: pushes select");
   const { data: pushRow } = await supabase
     .from("pushes")
     .select("*")
@@ -165,16 +182,21 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     .order("pushed_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  endPushes();
 
   let defaultOwnerId: string | null = null;
   if (company.hubspot_company_id) {
+    const endOwner = timer("hubspot: getCompanyOwnerId");
     try {
       defaultOwnerId = await getCompanyOwnerId(company.hubspot_company_id);
     } catch (err) {
       console.error("Failed to fetch default owner for company", company.id, err);
+    } finally {
+      endOwner();
     }
   }
 
+  endTotal();
   return {
     id: entity.id,
     relationshipState: entity.relationship_state,

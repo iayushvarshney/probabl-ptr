@@ -4,6 +4,7 @@ import { generateEntitySummary, generateSignalSummaries } from "@/lib/claude-sum
 import { getEntityDetail } from "@/lib/entity-detail";
 import { saveSignalSummaries } from "@/lib/signals";
 import { supabase } from "@/lib/supabase";
+import { timer } from "@/lib/timing";
 
 export const dynamic = "force-dynamic";
 
@@ -12,14 +13,22 @@ export default async function EntityDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const endPage = timer("PAGE TOTAL (entities/[id])");
   const { id } = await params;
+
+  const endGetDetail = timer("getEntityDetail (called from page)");
   let detail = await getEntityDetail(id);
-  if (!detail) notFound();
+  endGetDetail();
+  if (!detail) {
+    endPage();
+    notFound();
+  }
 
   // Generate the Claude summary once per entity, the first time it's
   // viewed, and cache it in claude_summary — never recomputed on subsequent
   // visits, and never touches the score.
   if (!detail.claudeSummary) {
+    const endEntitySummary = timer("claude: generateEntitySummary + db save");
     try {
       const summary = await generateEntitySummary(detail);
       if (summary) {
@@ -32,7 +41,11 @@ export default async function EntityDetailPage({
       }
     } catch (err) {
       console.error("Claude summary generation failed for entity", id, err);
+    } finally {
+      endEntitySummary();
     }
+  } else {
+    console.log("[timing] claude: generateEntitySummary skipped (cached)");
   }
 
   // Same generate-once-and-cache approach, per signal: only the signals
@@ -40,6 +53,9 @@ export default async function EntityDetailPage({
   // to Claude; already-summarized signals are never re-generated.
   const unsummarized = detail.signals.filter((s) => !s.signalSummary);
   if (unsummarized.length > 0) {
+    const endSignalSummaries = timer(
+      `claude: generateSignalSummaries + db save (${unsummarized.length}/${detail.signals.length} signals)`
+    );
     try {
       const companyName = detail.company.name ?? detail.company.domain ?? "this account";
       const summaries = await generateSignalSummaries(unsummarized, companyName);
@@ -54,12 +70,23 @@ export default async function EntityDetailPage({
       }
     } catch (err) {
       console.error("Signal summary generation failed for entity", id, err);
+    } finally {
+      endSignalSummaries();
     }
+  } else {
+    console.log(
+      `[timing] claude: generateSignalSummaries skipped (all ${detail.signals.length} signals cached)`
+    );
   }
 
-  return (
+  const endRenderPrep = timer("render prep (JSX construction, pre-return)");
+  const jsx = (
     <div className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
       <EntityDetailView detail={detail} />
     </div>
   );
+  endRenderPrep();
+
+  endPage();
+  return jsx;
 }
