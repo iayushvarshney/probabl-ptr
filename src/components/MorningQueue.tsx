@@ -21,7 +21,6 @@ function initialFor(entity: QueueEntity): string {
 
 export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ALL");
-  const [targetOnly, setTargetOnly] = useState(false);
   const [search, setSearch] = useState("");
 
   const counts = useMemo(() => {
@@ -38,14 +37,13 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
     const query = search.trim().toLowerCase();
     return entities.filter((e) => {
       if (stateFilter !== "ALL" && e.relationshipState !== stateFilter) return false;
-      if (targetOnly && !e.isTargetAccount) return false;
       if (query) {
         const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
     });
-  }, [entities, stateFilter, targetOnly, search]);
+  }, [entities, stateFilter, search]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -63,10 +61,6 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
               {RELATIONSHIP_STATE_LABELS[state]} ({counts[state]})
             </FilterButton>
           ))}
-          <span className="mx-1 h-5 w-px bg-zinc-200" />
-          <FilterButton active={targetOnly} onClick={() => setTargetOnly((v) => !v)}>
-            Target accounts only
-          </FilterButton>
         </div>
 
         <div className="relative">
