@@ -53,6 +53,42 @@ function sortByOutreachRank(contacts: EntityDetailContact[]): EntityDetailContac
   });
 }
 
+// Only the 3 most recent signals render inline on load — the rest are one
+// click away via "View all", rather than every signal's row (and, once
+// opened, its raw payload) being part of the initial page render.
+const SIGNALS_PREVIEW_COUNT = 3;
+
+function SignalRow({
+  signal,
+  onClick,
+}: {
+  signal: EntityDetail["signals"][number];
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center justify-between gap-3 py-2.5 text-left text-sm hover:bg-zinc-50"
+    >
+      <span className="flex items-center gap-2">
+        <span className="font-medium text-zinc-800">
+          {signal.signalType.replace(/_/g, " ")}
+        </span>
+        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+          {signal.originChannel}
+        </span>
+        <span className="text-[11px] uppercase text-zinc-400">{signal.source}</span>
+        {signal.campaign && <span className="text-xs text-zinc-400">· {signal.campaign}</span>}
+        {signal.signalSummary && <SparkleIcon className="h-3.5 w-3.5 text-persian-blue/50" />}
+      </span>
+      <span className="shrink-0 text-xs text-zinc-400">
+        {formatRelativeTime(signal.occurredAt)}
+      </span>
+    </button>
+  );
+}
+
 export function EntityDetailView({ detail: initialDetail }: { detail: EntityDetail }) {
   const router = useRouter();
   const [detail, setDetail] = useState(initialDetail);
@@ -68,6 +104,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   const [activeSignalId, setActiveSignalId] = useState<string | null>(null);
   const [loadingSignalId, setLoadingSignalId] = useState<string | null>(null);
   const [signalSummaryError, setSignalSummaryError] = useState<string | null>(null);
+  const [isViewingAllSignals, setIsViewingAllSignals] = useState(false);
 
   // Per-contact task modal state — reset each time a different contact is
   // opened (see openContactModal).
@@ -202,6 +239,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   }
 
   function openSignalModal(signal: EntityDetail["signals"][number]) {
+    setIsViewingAllSignals(false); // drill down from "view all", don't stack modals
     setActiveSignalId(signal.id);
     setSignalSummaryError(null);
     if (signal.signalSummary || loadingSignalId === signal.id) return;
@@ -392,34 +430,19 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
 
       <Section title={`Signals (${detail.signals.length})`}>
         <div className="flex flex-col divide-y divide-zinc-100">
-          {detail.signals.map((signal) => (
-            <button
-              key={signal.id}
-              type="button"
-              onClick={() => openSignalModal(signal)}
-              className="flex w-full items-center justify-between gap-3 py-2.5 text-left text-sm hover:bg-zinc-50"
-            >
-              <span className="flex items-center gap-2">
-                <span className="font-medium text-zinc-800">
-                  {signal.signalType.replace(/_/g, " ")}
-                </span>
-                <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
-                  {signal.originChannel}
-                </span>
-                <span className="text-[11px] uppercase text-zinc-400">{signal.source}</span>
-                {signal.campaign && (
-                  <span className="text-xs text-zinc-400">· {signal.campaign}</span>
-                )}
-                {signal.signalSummary && (
-                  <SparkleIcon className="h-3.5 w-3.5 text-persian-blue/50" />
-                )}
-              </span>
-              <span className="shrink-0 text-xs text-zinc-400">
-                {formatRelativeTime(signal.occurredAt)}
-              </span>
-            </button>
+          {detail.signals.slice(0, SIGNALS_PREVIEW_COUNT).map((signal) => (
+            <SignalRow key={signal.id} signal={signal} onClick={() => openSignalModal(signal)} />
           ))}
         </div>
+        {detail.signals.length > SIGNALS_PREVIEW_COUNT && (
+          <button
+            type="button"
+            onClick={() => setIsViewingAllSignals(true)}
+            className="mt-2 w-full rounded-lg border border-zinc-200 py-2 text-center text-sm font-medium text-persian-blue hover:bg-persian-blue/5"
+          >
+            View all {detail.signals.length} signals
+          </button>
+        )}
       </Section>
 
       {detail.status !== "dismissed" && (
@@ -547,6 +570,38 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
                 <CheckIcon className="h-4 w-4" />
                 {isDeleting ? "Deleting…" : "Yes"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isViewingAllSignals && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-8"
+          onClick={() => setIsViewingAllSignals(false)}
+        >
+          <div
+            className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-2xl bg-white p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-base font-semibold text-zinc-900">
+                All signals ({detail.signals.length})
+              </h2>
+              <button
+                type="button"
+                onClick={() => setIsViewingAllSignals(false)}
+                className="text-zinc-400 hover:text-zinc-600"
+              >
+                <XIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              <div className="flex flex-col divide-y divide-zinc-100">
+                {detail.signals.map((signal) => (
+                  <SignalRow key={signal.id} signal={signal} onClick={() => openSignalModal(signal)} />
+                ))}
+              </div>
             </div>
           </div>
         </div>
