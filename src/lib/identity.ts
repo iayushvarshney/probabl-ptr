@@ -1,3 +1,4 @@
+import { isFreeEmailDomain } from "@/lib/free-email-domains";
 import type { IncomingSignal } from "@/lib/types";
 
 export type IdentityConfidence = "high" | "medium" | "low";
@@ -18,30 +19,7 @@ export type IdentityResolution = {
   confidence: IdentityConfidence;
 };
 
-// Free/personal email providers aren't a reliable proxy for a company
-// domain — an email at one of these shouldn't be treated as a confident
-// company match on its own.
-const FREE_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "yahoo.com",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "icloud.com",
-  "me.com",
-  "aol.com",
-  "proton.me",
-  "protonmail.com",
-  "gmx.com",
-  "yandex.com",
-  "mail.com",
-]);
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isFreeEmailDomain(domain: string): boolean {
-  return FREE_EMAIL_DOMAINS.has(domain.toLowerCase());
-}
 
 /**
  * Resolves a signal's person_identifier/company_domain into a structured
@@ -67,7 +45,9 @@ export function resolveIdentity(signal: IncomingSignal): IdentityResolution {
     fullName = identifier || undefined;
   }
 
-  const explicitDomain = signal.company_domain?.trim().toLowerCase() || undefined;
+  const explicitDomainRaw = signal.company_domain?.trim().toLowerCase() || undefined;
+  const explicitDomain =
+    explicitDomainRaw && !isFreeEmailDomain(explicitDomainRaw) ? explicitDomainRaw : undefined;
   const emailDomain = email?.split("@")[1];
   const domain =
     explicitDomain ??

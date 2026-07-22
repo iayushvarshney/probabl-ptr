@@ -12,10 +12,14 @@ import {
 } from "@/lib/relationship-state";
 import type { RelationshipState } from "@/lib/types";
 
-type StateFilter = "ALL" | RelationshipState;
+type StateFilter = "ALL" | RelationshipState | "NO_COMPANY";
+
+function hasNoCompany(entity: QueueEntity): boolean {
+  return !entity.companyName && !entity.companyDomain;
+}
 
 function initialFor(entity: QueueEntity): string {
-  const name = entity.companyName ?? entity.companyDomain ?? "?";
+  const name = entity.companyName ?? entity.companyDomain ?? entity.contactEmail ?? "?";
   return name.charAt(0).toUpperCase();
 }
 
@@ -29,16 +33,24 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       KNOWN_CONTACT_KNOWN_COMPANY: 0,
       NET_NEW_CONTACT_NET_NEW_COMPANY: 0,
     };
-    for (const e of entities) byState[e.relationshipState] += 1;
-    return byState;
+    let noCompany = 0;
+    for (const e of entities) {
+      byState[e.relationshipState] += 1;
+      if (hasNoCompany(e)) noCompany += 1;
+    }
+    return { byState, noCompany };
   }, [entities]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
     return entities.filter((e) => {
-      if (stateFilter !== "ALL" && e.relationshipState !== stateFilter) return false;
+      if (stateFilter === "NO_COMPANY") {
+        if (!hasNoCompany(e)) return false;
+      } else if (stateFilter !== "ALL" && e.relationshipState !== stateFilter) {
+        return false;
+      }
       if (query) {
-        const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""}`.toLowerCase();
+        const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""} ${e.contactEmail ?? ""}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
@@ -58,9 +70,17 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
               active={stateFilter === state}
               onClick={() => setStateFilter(state)}
             >
-              {RELATIONSHIP_STATE_LABELS[state]} ({counts[state]})
+              {RELATIONSHIP_STATE_LABELS[state]} ({counts.byState[state]})
             </FilterButton>
           ))}
+          {counts.noCompany > 0 && (
+            <FilterButton
+              active={stateFilter === "NO_COMPANY"}
+              onClick={() => setStateFilter("NO_COMPANY")}
+            >
+              No company ({counts.noCompany})
+            </FilterButton>
+          )}
         </div>
 
         <div className="relative">
@@ -96,10 +116,18 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-zinc-900">
-                    {entity.companyName ?? entity.companyDomain ?? "Unknown company"}
+                    {entity.companyName ??
+                      entity.companyDomain ??
+                      entity.contactEmail ??
+                      "No company"}
                   </span>
                   {entity.companyDomain && entity.companyName && (
                     <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
+                  )}
+                  {hasNoCompany(entity) && (
+                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                      no company
+                    </span>
                   )}
                   <span
                     className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}

@@ -1,3 +1,4 @@
+import { isFreeEmailDomain } from "@/lib/free-email-domains";
 import type { IncomingSignal, OriginChannel, SignalType } from "@/lib/types";
 import { asRecord, domainFromEmail, firstString } from "./shared";
 
@@ -92,8 +93,15 @@ export function normalizePostHogSignal(
   );
 
   // Only an explicit company_domain property counts — $host (the page's
-  // own hostname) is never a valid proxy for the visitor's company.
-  const companyDomain = firstString(properties["company_domain"]) ?? domainFromEmail(email);
+  // own hostname) is never a valid proxy for the visitor's company. The
+  // email-derived fallback is skipped for free/personal providers (gmail,
+  // yahoo, etc.) — deriving "gmail.com" as a company_domain doesn't just
+  // mislabel one entity, it wrongly merges every unrelated gmail user into
+  // the same fake company (upsertCompany matches on domain).
+  const emailDomain = domainFromEmail(email);
+  const companyDomain =
+    firstString(properties["company_domain"]) ??
+    (emailDomain && !isFreeEmailDomain(emailDomain) ? emailDomain : undefined);
 
   const occurredAt =
     firstString(rawPayload["timestamp"], rawPayload["sent_at"], properties["$time"]) ??

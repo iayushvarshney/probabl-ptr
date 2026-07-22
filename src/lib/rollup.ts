@@ -87,6 +87,11 @@ type EntityRow = {
 async function upsertCompany(params: {
   domain?: string;
   name?: string;
+  /** When set, reuse this exact company row instead of looking one up by
+   * domain/name — used for the no-reliable-domain case, where the caller
+   * has already determined (via the contact's email) which no-domain
+   * company row belongs to this specific person. */
+  existingCompanyId?: string;
   hubspotCompanyId?: string;
   isTargetAccount?: boolean;
   hasOpenOpp?: boolean;
@@ -104,7 +109,14 @@ async function upsertCompany(params: {
 }): Promise<CompanyRow> {
   let existing: CompanyRow | null = null;
 
-  if (params.domain) {
+  if (params.existingCompanyId) {
+    const { data } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("id", params.existingCompanyId)
+      .maybeSingle();
+    existing = data;
+  } else if (params.domain) {
     const { data } = await supabase
       .from("companies")
       .select("*")
@@ -304,9 +316,35 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
 
   const hasOpenOpp = hubspotCompany ? await hasOpenDeal(hubspotCompany.id) : undefined;
 
+  // No reliable company domain (e.g. a free/personal email) — never group
+  // by name/domain guessing here, since that's how unrelated people sharing
+  // a free email provider previously got merged into one fake company. If
+  // we've already seen this exact person, reuse their own no-company row;
+  // otherwise upsertCompany below creates a fresh one scoped to just them.
+  let existingNoDomainCompanyId: string | undefined;
+  if (!identity.company.domain && identity.person.email) {
+    const { data: existingContactRow } = await supabase
+      .from("contacts")
+      .select("company_id, companies(domain)")
+      .eq("email", identity.person.email)
+      .maybeSingle();
+    const companiesField = existingContactRow?.companies as
+      | { domain: string | null }
+      | { domain: string | null }[]
+      | null
+      | undefined;
+    const existingCompanyDomain = Array.isArray(companiesField)
+      ? companiesField[0]?.domain
+      : companiesField?.domain;
+    if (existingContactRow?.company_id && !existingCompanyDomain) {
+      existingNoDomainCompanyId = existingContactRow.company_id;
+    }
+  }
+
   const company = await upsertCompany({
     domain: identity.company.domain,
     name: identity.company.name ?? hubspotCompany?.name ?? undefined,
+    existingCompanyId: existingNoDomainCompanyId,
     hubspotCompanyId: hubspotCompany?.id,
     isTargetAccount: hubspotCompany?.isTargetAccount,
     hasOpenOpp,

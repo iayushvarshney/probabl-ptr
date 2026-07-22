@@ -13,6 +13,10 @@ export type QueueEntity = {
   hasOpenOpp: boolean;
   matchesIcp: boolean;
   originChannels: OriginChannel[];
+  /** Only meaningful when companyName/companyDomain are both null — the
+   * "No company" bucket's display identifier, since there's no company
+   * name to show. */
+  contactEmail: string | null;
 };
 
 type CompanyFields = {
@@ -28,6 +32,7 @@ type CompanyFields = {
 // both shapes defensively (same pattern as recompute.ts).
 type EntityRow = {
   id: string;
+  company_id: string;
   relationship_state: RelationshipState;
   composite_score: number;
   top_reason: string | null;
@@ -55,7 +60,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
   const { data, error } = await supabase
     .from("entities")
     .select(
-      "id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)"
+      "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)"
     )
     .eq("status", "pending")
     .order("composite_score", { ascending: false });
@@ -79,6 +84,26 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
     }
   }
 
+  // Only needed for the "no company" display fallback — cheap to fetch for
+  // every entity's company_id rather than conditionally, since it's one
+  // bulk query either way.
+  const contactEmailByCompany = new Map<string, string>();
+  const companyIds = [...new Set(rows.map((r) => r.company_id))];
+  if (companyIds.length > 0) {
+    const { data: contactRows, error: contactsError } = await supabase
+      .from("contacts")
+      .select("company_id, email")
+      .in("company_id", companyIds)
+      .not("email", "is", null)
+      .order("updated_at", { ascending: false });
+    if (contactsError) throw contactsError;
+    for (const c of contactRows ?? []) {
+      if (!contactEmailByCompany.has(c.company_id) && c.email) {
+        contactEmailByCompany.set(c.company_id, c.email);
+      }
+    }
+  }
+
   return rows.map((row) => {
     const company = firstOrSelf(row.companies);
     return {
@@ -93,6 +118,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
       hasOpenOpp: company?.has_open_opp ?? false,
       matchesIcp: company?.matches_icp ?? false,
       originChannels: [...(channelsByEntity.get(row.id) ?? [])].sort(),
+      contactEmail: contactEmailByCompany.get(row.company_id) ?? null,
     };
   });
 }
