@@ -288,42 +288,97 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Section title="HubSpot context">
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
-            <dt className="text-zinc-400">Company</dt>
-            <dd className="text-zinc-700">
-              {detail.company.hubspotCompanyId ? (
-                <span className="font-mono text-xs">{detail.company.hubspotCompanyId}</span>
-              ) : (
-                <span className="text-zinc-400">not in HubSpot</span>
+          <div className="flex flex-col gap-3">
+            {detail.company.aboutBlurb && (
+              <p className="text-sm text-zinc-600">{detail.company.aboutBlurb}</p>
+            )}
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+              <dt className="text-zinc-400">Company</dt>
+              <dd className="text-zinc-700">
+                {detail.company.hubspotCompanyId ? (
+                  <span className="flex items-center gap-2">
+                    <span>{detail.company.name ?? detail.company.domain}</span>
+                    <span className="font-mono text-xs text-zinc-400">
+                      {detail.company.hubspotCompanyId}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-zinc-400">not in HubSpot</span>
+                )}
+              </dd>
+
+              <dt className="text-zinc-400">Website</dt>
+              <dd className="text-zinc-700">
+                {detail.company.website ? (
+                  <a
+                    href={detail.company.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-persian-blue hover:underline"
+                  >
+                    {detail.company.domain ?? detail.company.website}
+                  </a>
+                ) : (
+                  <span className="text-zinc-400">unknown</span>
+                )}
+              </dd>
+
+              <dt className="text-zinc-400">Industry</dt>
+              <dd className="text-zinc-700">
+                {detail.company.industry ?? <span className="text-zinc-400">unknown</span>}
+              </dd>
+
+              <dt className="text-zinc-400">Lifecycle stage</dt>
+              <dd className="text-zinc-700">
+                {detail.company.lifecycleStage ?? (
+                  <span className="text-zinc-400">not in HubSpot</span>
+                )}
+              </dd>
+
+              {detail.company.dealStage && (
+                <>
+                  <dt className="text-zinc-400">Deal stage</dt>
+                  <dd className="text-zinc-700">{detail.company.dealStage}</dd>
+                </>
               )}
-            </dd>
-            <dt className="text-zinc-400">Contacts</dt>
-            <dd className="text-zinc-700">
-              {detail.contacts.length === 0 ? (
-                <span className="text-zinc-400">none yet</span>
-              ) : (
-                <ul className="flex flex-col gap-1">
-                  {detail.contacts.map((c) => (
-                    <li key={c.id} className="flex items-center gap-2">
-                      <span>{contactLabel(c)}</span>
-                      {c.hubspotContactId ? (
-                        <span className="font-mono text-xs text-zinc-400">
-                          {c.hubspotContactId}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-zinc-400">not in HubSpot</span>
-                      )}
-                      {c.id === detail.primaryContactId && (
-                        <span className="rounded bg-persian-blue/5 px-1.5 py-0.5 text-[11px] font-medium text-persian-blue">
-                          primary
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </dd>
-          </dl>
+
+              <dt className="text-zinc-400">Last activity</dt>
+              <dd className="text-zinc-700">
+                {detail.company.lastActivityDate ? (
+                  formatRelativeTime(detail.company.lastActivityDate)
+                ) : (
+                  <span className="text-zinc-400">unknown</span>
+                )}
+              </dd>
+
+              <dt className="text-zinc-400">Contacts</dt>
+              <dd className="text-zinc-700">
+                {detail.contacts.length === 0 ? (
+                  <span className="text-zinc-400">none yet</span>
+                ) : (
+                  <ul className="flex flex-col gap-1">
+                    {detail.contacts.map((c) => (
+                      <li key={c.id} className="flex items-center gap-2">
+                        <span>{contactLabel(c)}</span>
+                        {c.hubspotContactId ? (
+                          <span className="font-mono text-xs text-zinc-400">
+                            {c.hubspotContactId}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">not in HubSpot</span>
+                        )}
+                        {c.id === detail.primaryContactId && (
+                          <span className="rounded bg-persian-blue/5 px-1.5 py-0.5 text-[11px] font-medium text-persian-blue">
+                            primary
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </dl>
+          </div>
         </Section>
 
         <Section title="Claude summary">

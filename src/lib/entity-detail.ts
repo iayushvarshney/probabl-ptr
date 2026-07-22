@@ -1,5 +1,5 @@
 import { isMissingColumnError } from "@/lib/db-errors";
-import { getCompanyOwnerId } from "@/lib/hubspot";
+import { findOpenDealStage, getCompanyDetails, getCompanyOwnerId } from "@/lib/hubspot";
 import { supabase } from "@/lib/supabase";
 import type {
   OriginChannel,
@@ -58,6 +58,24 @@ export type EntityDetail = {
     isTargetAccount: boolean;
     hasOpenOpp: boolean;
     matchesIcp: boolean;
+    /** HubSpot's industry property when the company is matched there;
+     * falls back to our own stored (Reo-enrichment) industry otherwise. */
+    industry: string | null;
+    /** HubSpot lifecycle stage (Lead, MQL, SQL, Opportunity, Customer,
+     * etc.) — null if the company isn't in HubSpot. */
+    lifecycleStage: string | null;
+    /** The open deal's pipeline stage, if any (e.g. "Discovery", "Demo
+     * scheduled") — null if there's no open deal. */
+    dealStage: string | null;
+    /** HubSpot's hs_lastmodifieddate on the company record — the simplest
+     * universally-available "last activity" signal. */
+    lastActivityDate: string | null;
+    /** HubSpot's website property if set (may differ from domain — full
+     * URL, alternate subdomain, etc.); falls back to https://{domain}. */
+    website: string | null;
+    /** Claude's 2-3 line "about this company" blurb, generated once per
+     * company and cached — null until the first entity-detail view for it. */
+    aboutBlurb: string | null;
   };
   contacts: EntityDetailContact[];
   signals: EntityDetailSignal[];
@@ -240,11 +258,34 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   }));
 
   let defaultOwnerId: string | null = null;
+  let hubspotIndustry: string | null = null;
+  let lifecycleStage: string | null = null;
+  let lastActivityDate: string | null = null;
+  let website: string | null = null;
+  let dealStage: string | null = null;
   if (company.hubspot_company_id) {
-    try {
-      defaultOwnerId = await getCompanyOwnerId(company.hubspot_company_id);
-    } catch (err) {
-      console.error("Failed to fetch default owner for company", company.id, err);
+    const [ownerResult, detailsResult, dealStageResult] = await Promise.allSettled([
+      getCompanyOwnerId(company.hubspot_company_id),
+      getCompanyDetails(company.hubspot_company_id),
+      findOpenDealStage(company.hubspot_company_id),
+    ]);
+    if (ownerResult.status === "fulfilled") {
+      defaultOwnerId = ownerResult.value;
+    } else {
+      console.error("Failed to fetch default owner for company", company.id, ownerResult.reason);
+    }
+    if (detailsResult.status === "fulfilled") {
+      hubspotIndustry = detailsResult.value.industry;
+      lifecycleStage = detailsResult.value.lifecycleStage;
+      lastActivityDate = detailsResult.value.lastActivityDate;
+      website = detailsResult.value.website;
+    } else {
+      console.error("Failed to fetch HubSpot company details for", company.id, detailsResult.reason);
+    }
+    if (dealStageResult.status === "fulfilled") {
+      dealStage = dealStageResult.value;
+    } else {
+      console.error("Failed to fetch open deal stage for company", company.id, dealStageResult.reason);
     }
   }
 
@@ -264,6 +305,12 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
       isTargetAccount: company.is_target_account,
       hasOpenOpp: company.has_open_opp,
       matchesIcp: company.matches_icp,
+      industry: hubspotIndustry ?? company.industry ?? null,
+      lifecycleStage,
+      dealStage,
+      lastActivityDate,
+      website: website ?? (company.domain ? `https://${company.domain}` : null),
+      aboutBlurb: company.about_blurb ?? null,
     },
     contacts,
     signals,

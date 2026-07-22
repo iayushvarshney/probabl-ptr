@@ -75,6 +75,43 @@ export async function generateEntitySummary(detail: EntityDetail): Promise<strin
   return extractText(message);
 }
 
+/**
+ * A factual 2-3 line "about this company" blurb for the HubSpot-context
+ * panel — distinct from generateEntitySummary, which narrates our GTM/
+ * signal situation with them, not who they are. Generated once per
+ * company (not per entity view) and cached in companies.about_blurb.
+ */
+export async function generateCompanyBlurb(company: EntityDetail["company"]): Promise<string> {
+  const name = company.name ?? company.domain ?? "This company";
+
+  if (USE_MOCK_CLAUDE) {
+    return `${name} is a company${company.industry ? ` in the ${company.industry} industry` : ""}. [mock company blurb]`;
+  }
+
+  const context = `
+Company: ${name}
+Domain: ${company.domain ?? "unknown"}
+Industry: ${company.industry ?? "unknown"}
+HubSpot lifecycle stage: ${company.lifecycleStage ?? "not in HubSpot"}
+`.trim();
+
+  const message = await anthropic.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 200,
+    system:
+      "You are a GTM analyst assistant. Write a short, factual 2-3 line description of what this " +
+      "company/organization does — general background a sales rep would want before reaching out, " +
+      "not our relationship or signals with them. Use your own general knowledge if you recognize " +
+      "the company by name, supplemented by the industry/domain given. If you don't recognize it " +
+      "and have little to go on, give a brief best-effort description grounded in the domain/" +
+      "industry provided, or say plainly that little is known — never invent specific unverifiable " +
+      "facts (funding, headcount, founders) that aren't well-established or weren't given to you.",
+    messages: [{ role: "user", content: context }],
+  });
+
+  return extractText(message);
+}
+
 export type SignalForSummary = {
   id: string;
   source: string;

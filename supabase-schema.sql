@@ -171,3 +171,12 @@ alter table contacts add column if not exists outreach_rank integer;
 -- primary contact at the time" — left as-is rather than backfilled.
 -- ─────────────────────────────────────────────────────────────
 alter table pushes add column if not exists contact_id uuid references contacts(id) on delete set null;
+
+-- ─────────────────────────────────────────────────────────────
+-- companies: Claude's 2-3 line "about this company" blurb, generated once
+-- per company (not per entity view) and cached here — same generate-once
+-- pattern as elsewhere. Distinct from entities.claude_summary, which
+-- narrates the GTM/signal situation, not the company itself. Safe to
+-- re-run.
+-- ─────────────────────────────────────────────────────────────
+alter table companies add column if not exists about_blurb text;

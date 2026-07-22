@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation";
 import { EntityDetailView } from "@/components/EntityDetailView";
-import { generateContactRecommendations, generateEntitySummary } from "@/lib/claude-summary";
+import {
+  generateCompanyBlurb,
+  generateContactRecommendations,
+  generateEntitySummary,
+} from "@/lib/claude-summary";
 import { saveContactOutreachRecommendations } from "@/lib/contacts";
 import { getEntityDetail } from "@/lib/entity-detail";
 import { supabase } from "@/lib/supabase";
@@ -55,6 +59,25 @@ export default async function EntityDetailPage({
       }
     } catch (err) {
       console.error("Contact recommendation generation failed for entity", id, err);
+    }
+  }
+
+  // Same generate-once-and-cache approach for the "about this company"
+  // blurb — factual background about who they are, distinct from the
+  // GTM-focused claudeSummary above.
+  if (!detail.company.aboutBlurb) {
+    try {
+      const blurb = await generateCompanyBlurb(detail.company);
+      if (blurb) {
+        const { error } = await supabase
+          .from("companies")
+          .update({ about_blurb: blurb })
+          .eq("id", detail.company.id);
+        if (error) throw error;
+        detail = { ...detail, company: { ...detail.company, aboutBlurb: blurb } };
+      }
+    } catch (err) {
+      console.error("Company blurb generation failed for company", detail.company.id, err);
     }
   }
 

@@ -48,6 +48,14 @@ export type HubSpotCompany = {
   name: string | null;
   domain: string | null;
   isTargetAccount: boolean;
+  industry: string | null;
+  lifecycleStage: string | null;
+  /** ISO timestamp of hs_lastmodifieddate — HubSpot's own "last activity"
+   * signal on the company record. */
+  lastActivityDate: string | null;
+  /** HubSpot's own `website` property, when set (may include protocol/path,
+   * unlike `domain`) — falls back to constructing one from domain if null. */
+  website: string | null;
 };
 
 export type HubSpotOwner = {
@@ -82,6 +90,10 @@ function mockCompanyByDomain(domain: string): HubSpotCompany | null {
     name: domain.split(".")[0],
     domain,
     isTargetAccount: domain.includes("target"),
+    industry: "Software",
+    lifecycleStage: "opportunity",
+    lastActivityDate: new Date().toISOString(),
+    website: `https://${domain}`,
   };
 }
 
@@ -183,6 +195,48 @@ export async function getTargetAccountPropertyName(): Promise<string> {
   return cachedTargetAccountProperty;
 }
 
+// HubSpot's default (out-of-the-box) lifecycle stage values are internal
+// keys, not display labels — this covers the standard set; a portal-
+// customized stage not in this map just displays as its raw value.
+const LIFECYCLE_STAGE_LABELS: Record<string, string> = {
+  subscriber: "Subscriber",
+  lead: "Lead",
+  marketingqualifiedlead: "Marketing Qualified Lead",
+  salesqualifiedlead: "Sales Qualified Lead",
+  opportunity: "Opportunity",
+  customer: "Customer",
+  evangelist: "Evangelist",
+  other: "Other",
+};
+
+function lifecycleStageLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return LIFECYCLE_STAGE_LABELS[value.toLowerCase()] ?? value;
+}
+
+// HubSpot's default `industry` property is an enumeration of internal
+// SCREAMING_SNAKE_CASE values (e.g. "COMPUTER_HARDWARE") — there's no
+// per-value label map exposed via the standard properties API without an
+// extra options lookup, so humanize generically rather than hardcoding
+// HubSpot's full (and portal-customizable) industry list.
+function humanizeEnumValue(value: string | null | undefined): string | null {
+  if (!value) return null;
+  if (!/^[A-Z0-9_]+$/.test(value)) return value; // already human-readable
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+/** Ensures a URL has a protocol — HubSpot's `website` property is
+ * sometimes just a bare domain (e.g. "amd.com"), which the browser would
+ * otherwise treat as a relative link. */
+function normalizeUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+}
+
 export async function findCompanyByDomain(
   domain: string
 ): Promise<HubSpotCompany | null> {
@@ -198,7 +252,15 @@ export async function findCompanyByDomain(
       filterGroups: [
         { filters: [{ propertyName: "domain", operator: "EQ", value: domain }] },
       ],
-      properties: ["name", "domain", targetAccountProperty],
+      properties: [
+        "name",
+        "domain",
+        "industry",
+        "lifecyclestage",
+        "hs_lastmodifieddate",
+        "website",
+        targetAccountProperty,
+      ],
       limit: 1,
     }),
   });
@@ -211,10 +273,16 @@ export async function findCompanyByDomain(
     name: hit.properties.name ?? null,
     domain: hit.properties.domain ?? null,
     isTargetAccount: hit.properties[targetAccountProperty] === "true",
+    industry: humanizeEnumValue(hit.properties.industry),
+    lifecycleStage: lifecycleStageLabel(hit.properties.lifecyclestage),
+    lastActivityDate: hit.properties.hs_lastmodifieddate ?? null,
+    website: normalizeUrl(hit.properties.website),
   };
 }
 
-async function getOpenDealIds(companyId: string): Promise<string[]> {
+type OpenDeal = { id: string; dealstage?: string };
+
+async function getOpenDeals(companyId: string): Promise<OpenDeal[]> {
   const associations = await hubspotRequest<{ results: Array<{ id: string }> }>(
     `/crm/v3/objects/companies/${companyId}/associations/deals`
   );
@@ -223,34 +291,101 @@ async function getOpenDealIds(companyId: string): Promise<string[]> {
   if (dealIds.length === 0) return [];
 
   // hs_is_closed is HubSpot's built-in computed property covering both
-  // closed-won and closed-lost, so we don't need pipeline stage metadata.
+  // closed-won and closed-lost.
   const deals = await hubspotRequest<{
-    results: Array<{ id: string; properties: { hs_is_closed?: string } }>;
+    results: Array<{ id: string; properties: { hs_is_closed?: string; dealstage?: string } }>;
   }>("/crm/v3/objects/deals/batch/read", {
     method: "POST",
     body: JSON.stringify({
-      properties: ["hs_is_closed"],
+      properties: ["hs_is_closed", "dealstage"],
       inputs: dealIds.map((id) => ({ id })),
     }),
   });
 
   return deals.results
     .filter((deal) => deal.properties.hs_is_closed !== "true")
-    .map((deal) => deal.id);
+    .map((deal) => ({ id: deal.id, dealstage: deal.properties.dealstage }));
 }
 
 export async function hasOpenDeal(companyId: string): Promise<boolean> {
   if (USE_MOCK_HUBSPOT) return mockHasOpenDeal(companyId);
-  const openDealIds = await getOpenDealIds(companyId);
-  return openDealIds.length > 0;
+  const openDeals = await getOpenDeals(companyId);
+  return openDeals.length > 0;
 }
 
 /** First open deal ID associated with the company, if any — used to
  * associate a pushed task to a deal when one exists. */
 export async function findOpenDealId(companyId: string): Promise<string | null> {
   if (USE_MOCK_HUBSPOT) return mockHasOpenDeal(companyId) ? `mock-deal:${companyId}` : null;
-  const openDealIds = await getOpenDealIds(companyId);
-  return openDealIds[0] ?? null;
+  const openDeals = await getOpenDeals(companyId);
+  return openDeals[0]?.id ?? null;
+}
+
+let cachedDealStageLabels: Map<string, string> | null = null;
+
+/** Maps every deal pipeline's stage id -> display label, across all
+ * pipelines (a dealstage id is only unique within its own pipeline, but
+ * looking up which pipeline a given deal belongs to first is unnecessary
+ * extra work — stage ids are namespaced strings in practice and collisions
+ * across pipelines are vanishingly unlikely for this display-only use). */
+async function getDealStageLabels(): Promise<Map<string, string>> {
+  if (cachedDealStageLabels) return cachedDealStageLabels;
+
+  const result = await hubspotRequest<{
+    results: Array<{ stages: Array<{ id: string; label: string }> }>;
+  }>("/crm/v3/pipelines/deals");
+
+  const labels = new Map<string, string>();
+  for (const pipeline of result.results) {
+    for (const stage of pipeline.stages) labels.set(stage.id, stage.label);
+  }
+  cachedDealStageLabels = labels;
+  return labels;
+}
+
+/** The first open deal's pipeline stage, as a display label (e.g.
+ * "Discovery", "Demo scheduled") — null if there's no open deal. */
+export async function findOpenDealStage(companyId: string): Promise<string | null> {
+  if (USE_MOCK_HUBSPOT) return mockHasOpenDeal(companyId) ? "Discovery" : null;
+
+  const openDeals = await getOpenDeals(companyId);
+  const stageId = openDeals[0]?.dealstage;
+  if (!stageId) return null;
+
+  const labels = await getDealStageLabels();
+  return labels.get(stageId) ?? stageId;
+}
+
+export type HubSpotCompanyDetails = {
+  industry: string | null;
+  lifecycleStage: string | null;
+  lastActivityDate: string | null;
+  website: string | null;
+};
+
+/** Direct by-ID fetch for the entity detail page's "HubSpot context" panel
+ * — separate from findCompanyByDomain's domain search, same direct-GET
+ * pattern as getCompanyOwnerId below. */
+export async function getCompanyDetails(companyId: string): Promise<HubSpotCompanyDetails> {
+  if (USE_MOCK_HUBSPOT) {
+    return {
+      industry: "Software",
+      lifecycleStage: "Opportunity",
+      lastActivityDate: new Date().toISOString(),
+      website: null,
+    };
+  }
+
+  const result = await hubspotRequest<{ properties: Record<string, string | null> }>(
+    `/crm/v3/objects/companies/${companyId}?properties=industry,lifecyclestage,hs_lastmodifieddate,website`
+  );
+
+  return {
+    industry: humanizeEnumValue(result.properties.industry),
+    lifecycleStage: lifecycleStageLabel(result.properties.lifecyclestage),
+    lastActivityDate: result.properties.hs_lastmodifieddate ?? null,
+    website: normalizeUrl(result.properties.website),
+  };
 }
 
 /** The HubSpot owner currently assigned to a company, if any — used to
