@@ -1,3 +1,4 @@
+import { cleanDomainToName } from "@/lib/company-name";
 import { isMissingColumnError } from "@/lib/db-errors";
 import { resolveIdentity } from "@/lib/identity";
 import {
@@ -137,7 +138,13 @@ async function upsertCompany(params: {
   }
 
   const mergedDomain = params.domain ?? existing?.domain ?? null;
-  const mergedName = params.name ?? existing?.name ?? null;
+  // A real name (from HubSpot, or the source payload) always wins. Only
+  // once neither this call nor any prior one has ever supplied one do we
+  // fall back to a cleaned-up label derived from the domain — and even
+  // then, a later signal with a real name still overwrites it, since this
+  // fallback is never treated as "sticky" (it's just filler for `name`).
+  const mergedName =
+    params.name || existing?.name || (mergedDomain ? cleanDomainToName(mergedDomain) : null);
   const mergedIndustry = params.industry ?? existing?.industry ?? null;
   const mergedEmployeeCountRange =
     params.employeeCountRange ?? existing?.employee_count_range ?? null;
@@ -341,9 +348,14 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
     }
   }
 
+  // Name priority: HubSpot's own name (if matched) first, then a real name
+  // straight from the source payload (Reo's account_name / PostHog's
+  // company field), then the "Name @ Company" person_identifier cascade.
+  // The domain-cleanup fallback is applied inside upsertCompany, only if
+  // none of these ever produced anything.
   const company = await upsertCompany({
     domain: identity.company.domain,
-    name: identity.company.name ?? hubspotCompany?.name ?? undefined,
+    name: hubspotCompany?.name || signal.company_name || identity.company.name || undefined,
     existingCompanyId: existingNoDomainCompanyId,
     hubspotCompanyId: hubspotCompany?.id,
     isTargetAccount: hubspotCompany?.isTargetAccount,

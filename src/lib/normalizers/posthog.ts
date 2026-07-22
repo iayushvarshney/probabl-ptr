@@ -107,6 +107,15 @@ export function normalizePostHogSignal(
     firstString(rawPayload["timestamp"], rawPayload["sent_at"], properties["$time"]) ??
     new Date().toISOString();
 
+  // A real org/company name, when PostHog (or whatever's calling identify())
+  // has one — distinct from company_domain, never derived from it.
+  const companyName = firstString(
+    properties["company"],
+    properties["company_name"],
+    properties["organization"],
+    personProperties["company"]
+  );
+
   return {
     source: "posthog",
     signal_type: signalType,
@@ -115,6 +124,7 @@ export function normalizePostHogSignal(
     raw_payload: rawPayload,
     person_identifier: email,
     company_domain: companyDomain,
+    company_name: companyName,
     occurred_at: occurredAt,
   };
 }

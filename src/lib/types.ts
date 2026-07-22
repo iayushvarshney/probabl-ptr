@@ -35,6 +35,12 @@ export type IncomingSignal = {
   raw_payload: Record<string, unknown>;
   person_identifier: string;
   company_domain?: string;
+  /** A real company/organization name straight from the source payload
+   * (Reo's developer.account.account_name; PostHog's company property) —
+   * distinct from company_domain and never derived from it. Takes priority
+   * over a domain-cleanup fallback, but HubSpot's own name (when the
+   * company is matched) always wins over this. */
+  company_name?: string;
   occurred_at: string;
   /** Optional, source-specific account/company enrichment a normalizer can
    * attach (e.g. Reo's firmographic data) — persisted onto the companies

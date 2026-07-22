@@ -198,6 +198,7 @@ export function normalizeReoSignal(rawPayload: Record<string, unknown>): Incomin
     raw_payload: rawPayload,
     person_identifier: personIdentifier,
     company_domain: companyDomain,
+    company_name: accountName,
     occurred_at: occurredAt,
     ...(hasEnrichment
       ? {
