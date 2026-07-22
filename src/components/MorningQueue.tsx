@@ -35,8 +35,16 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
     };
     let noCompany = 0;
     for (const e of entities) {
-      byState[e.relationshipState] += 1;
-      if (hasNoCompany(e)) noCompany += 1;
+      // "No company" is its own bucket — every no-domain/no-name signal
+      // resolves to NET_NEW_CONTACT_NET_NEW_COMPANY (nothing to match in
+      // HubSpot), but showing it under "Net new" too would double-count it
+      // across two tabs and conflate "not in HubSpot" with "no company at
+      // all."
+      if (hasNoCompany(e)) {
+        noCompany += 1;
+      } else {
+        byState[e.relationshipState] += 1;
+      }
     }
     return { byState, noCompany };
   }, [entities]);
@@ -46,8 +54,8 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
     return entities.filter((e) => {
       if (stateFilter === "NO_COMPANY") {
         if (!hasNoCompany(e)) return false;
-      } else if (stateFilter !== "ALL" && e.relationshipState !== stateFilter) {
-        return false;
+      } else if (stateFilter !== "ALL") {
+        if (hasNoCompany(e) || e.relationshipState !== stateFilter) return false;
       }
       if (query) {
         const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""} ${e.contactEmail ?? ""}`.toLowerCase();
@@ -124,16 +132,17 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
                   {entity.companyDomain && entity.companyName && (
                     <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
                   )}
-                  {hasNoCompany(entity) && (
+                  {hasNoCompany(entity) ? (
                     <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
                       no company
                     </span>
+                  ) : (
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
+                    >
+                      {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
+                    </span>
                   )}
-                  <span
-                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
-                  >
-                    {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
-                  </span>
                   {entity.isTargetAccount && <Flag label="Target" />}
                   {entity.hasOpenOpp && <Flag label="Open opp" />}
                   {entity.matchesIcp && <Flag label="ICP" />}
