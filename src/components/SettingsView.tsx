@@ -248,6 +248,8 @@ export function SettingsView({
   initialIcp: IcpConfig;
   initialIcpVersion: number;
 }) {
+  const [activeTab, setActiveTab] = useState<"weights" | "icp">("weights");
+
   const [weights, setWeights] = useState(initialWeights);
   const [weightsVersion, setWeightsVersion] = useState(initialWeightsVersion);
   const [isSavingScoring, setIsSavingScoring] = useState(false);
@@ -360,6 +362,32 @@ export function SettingsView({
         </p>
       </header>
 
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab("weights")}
+          className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "weights"
+              ? "bg-persian-blue text-white"
+              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+          }`}
+        >
+          Signal weights
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("icp")}
+          className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "icp"
+              ? "bg-persian-blue text-white"
+              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+          }`}
+        >
+          ICP definition
+        </button>
+      </div>
+
+      {activeTab === "weights" && (
       <Section title={`Signal weights (v${weightsVersion})`}>
         <div className="flex flex-col gap-5">
           <div>
@@ -483,7 +511,9 @@ export function SettingsView({
           />
         </div>
       </Section>
+      )}
 
+      {activeTab === "icp" && (
       <Section title={`ICP definition (v${icpVersion})`}>
         <div className="flex flex-col gap-5">
           <div>
@@ -584,6 +614,7 @@ export function SettingsView({
           <SaveResetButtons onSave={handleSaveIcp} onReset={handleResetIcp} isSaving={isSavingIcp} />
         </div>
       </Section>
+      )}
     </div>
   );
 }
