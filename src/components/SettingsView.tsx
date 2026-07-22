@@ -362,14 +362,14 @@ export function SettingsView({
         </p>
       </header>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1 border-b border-zinc-200 pb-3">
         <button
           type="button"
           onClick={() => setActiveTab("weights")}
-          className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
             activeTab === "weights"
-              ? "bg-persian-blue text-white"
-              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              ? "bg-persian-blue/10 text-persian-blue"
+              : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
           }`}
         >
           Signal weights
@@ -377,10 +377,10 @@ export function SettingsView({
         <button
           type="button"
           onClick={() => setActiveTab("icp")}
-          className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
             activeTab === "icp"
-              ? "bg-persian-blue text-white"
-              : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+              ? "bg-persian-blue/10 text-persian-blue"
+              : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
           }`}
         >
           ICP definition
