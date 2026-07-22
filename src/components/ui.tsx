@@ -1,6 +1,6 @@
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white p-4">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-5">
       <h2 className="mb-3 text-xs font-medium uppercase tracking-wide text-zinc-400">{title}</h2>
       {children}
     </section>

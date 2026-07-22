@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { SearchIcon } from "@/components/icons";
 import { formatRelativeTime } from "@/lib/format";
 import type { QueueEntity } from "@/lib/queue";
 import {
@@ -13,9 +14,15 @@ import type { RelationshipState } from "@/lib/types";
 
 type StateFilter = "ALL" | RelationshipState;
 
+function initialFor(entity: QueueEntity): string {
+  const name = entity.companyName ?? entity.companyDomain ?? "?";
+  return name.charAt(0).toUpperCase();
+}
+
 export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ALL");
   const [targetOnly, setTargetOnly] = useState(false);
+  const [search, setSearch] = useState("");
 
   const counts = useMemo(() => {
     const byState: Record<RelationshipState, number> = {
@@ -28,17 +35,22 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   }, [entities]);
 
   const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
     return entities.filter((e) => {
       if (stateFilter !== "ALL" && e.relationshipState !== stateFilter) return false;
       if (targetOnly && !e.isTargetAccount) return false;
+      if (query) {
+        const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""}`.toLowerCase();
+        if (!haystack.includes(query)) return false;
+      }
       return true;
     });
-  }, [entities, stateFilter, targetOnly]);
+  }, [entities, stateFilter, targetOnly, search]);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <FilterButton active={stateFilter === "ALL"} onClick={() => setStateFilter("ALL")}>
             All ({entities.length})
           </FilterButton>
@@ -51,83 +63,79 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
               {RELATIONSHIP_STATE_LABELS[state]} ({counts[state]})
             </FilterButton>
           ))}
+          <span className="mx-1 h-5 w-px bg-zinc-200" />
+          <FilterButton active={targetOnly} onClick={() => setTargetOnly((v) => !v)}>
+            Target accounts only
+          </FilterButton>
         </div>
-        <label className="flex items-center gap-2 text-sm text-zinc-600">
+
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
           <input
-            type="checkbox"
-            checked={targetOnly}
-            onChange={(e) => setTargetOnly(e.target.checked)}
-            className="h-4 w-4 rounded border-zinc-300 text-persian-blue focus:ring-persian-blue"
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search companies…"
+            className="w-56 rounded-full border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-persian-blue focus:outline-none"
           />
-          Target accounts only
-        </label>
+        </div>
       </div>
 
       {filtered.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-zinc-300 p-12 text-center text-sm text-zinc-500">
+        <div className="rounded-2xl border border-dashed border-zinc-300 p-12 text-center text-sm text-zinc-500">
           {entities.length === 0
             ? "No signals yet — the queue will fill up as they come in."
             : "Nothing matches these filters."}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-zinc-200">
-          <table className="w-full min-w-[860px] border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-                <th className="px-4 py-2.5 font-medium">Company</th>
-                <th className="px-4 py-2.5 font-medium">Relationship</th>
-                <th className="px-4 py-2.5 font-medium text-right">Score</th>
-                <th className="px-4 py-2.5 font-medium">Why</th>
-                <th className="px-4 py-2.5 font-medium">Channels</th>
-                <th className="px-4 py-2.5 font-medium">Flags</th>
-                <th className="px-4 py-2.5 font-medium text-right">Last signal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((entity) => (
-                <tr
-                  key={entity.id}
-                  className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50"
-                >
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/entities/${entity.id}`}
-                      className="font-medium text-persian-blue hover:underline"
-                    >
-                      {entity.companyName ?? entity.companyDomain ?? "Unknown company"}
-                    </Link>
-                    {entity.companyDomain && entity.companyName && (
-                      <div className="text-xs text-zinc-400">{entity.companyDomain}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
-                    >
-                      {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono font-semibold text-zinc-900">
-                    {entity.compositeScore.toFixed(1)}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600">{entity.topReason ?? "—"}</td>
-                  <td className="px-4 py-3 text-zinc-600">
-                    {entity.originChannels.length > 0 ? entity.originChannels.join(", ") : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {entity.isTargetAccount && <Flag label="Target" />}
-                      {entity.hasOpenOpp && <Flag label="Open opp" />}
-                      {entity.matchesIcp && <Flag label="ICP" />}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right text-zinc-500">
-                    {formatRelativeTime(entity.lastSignalAt)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="flex flex-col gap-3">
+          {filtered.map((entity) => (
+            <Link
+              key={entity.id}
+              href={`/entities/${entity.id}`}
+              className="flex items-start gap-4 rounded-2xl border border-zinc-200 bg-white p-4 transition-colors hover:border-persian-blue/30 hover:bg-persian-blue/[0.02] sm:items-center"
+            >
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-persian-blue/10 text-base font-semibold text-persian-blue">
+                {initialFor(entity)}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-zinc-900">
+                    {entity.companyName ?? entity.companyDomain ?? "Unknown company"}
+                  </span>
+                  {entity.companyDomain && entity.companyName && (
+                    <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
+                  )}
+                  <span
+                    className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
+                  >
+                    {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
+                  </span>
+                  {entity.isTargetAccount && <Flag label="Target" />}
+                  {entity.hasOpenOpp && <Flag label="Open opp" />}
+                  {entity.matchesIcp && <Flag label="ICP" />}
+                </div>
+                {entity.topReason && (
+                  <p className="mt-1 truncate text-sm text-zinc-500">{entity.topReason}</p>
+                )}
+                {entity.originChannels.length > 0 && (
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    via {entity.originChannels.join(", ")}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex shrink-0 flex-col items-end gap-1.5">
+                <span className="rounded-full bg-persian-blue/10 px-2.5 py-1 font-mono text-sm font-semibold text-persian-blue">
+                  {entity.compositeScore.toFixed(1)}
+                </span>
+                <span className="text-xs text-zinc-400">
+                  {formatRelativeTime(entity.lastSignalAt)}
+                </span>
+              </div>
+            </Link>
+          ))}
         </div>
       )}
     </div>
@@ -147,7 +155,7 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`rounded-full px-3.5 py-2 text-xs font-medium transition-colors ${
         active ? "bg-persian-blue text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
       }`}
     >

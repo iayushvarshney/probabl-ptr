@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { LogInIcon } from "@/components/icons";
 import { createSessionToken, SESSION_COOKIE_NAME, SESSION_DURATION_MS } from "@/lib/session";
@@ -36,10 +37,11 @@ export default async function LoginPage({
   const { error, next } = await searchParams;
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#040524] px-4">
+    <div className="flex flex-1 flex-col items-center justify-center gap-6 bg-[#040524] px-4">
+      <Image src="/logo.png" alt="Probabl" width={174} height={42} priority />
       <form
         action={login}
-        className="w-full max-w-sm rounded-lg border border-zinc-200 bg-white p-6 shadow-sm"
+        className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
       >
         <h1 className="mb-1 text-lg font-semibold text-persian-blue">Probabl Ptr</h1>
         <p className="mb-4 text-sm text-zinc-500">Enter the shared password to continue.</p>

@@ -281,7 +281,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       </header>
 
       {detail.topReason && (
-        <p className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600">
+        <p className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600">
           {detail.topReason}
         </p>
       )}
@@ -467,7 +467,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
 
       {isConfirmingDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-sm rounded-lg bg-white p-6 shadow-lg">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-lg">
             <h2 className="mb-2 text-base font-semibold text-zinc-900">Delete from Queue</h2>
             <p className="mb-5 text-sm text-zinc-600">
               Are you sure you want to delete the company from the Queue?
@@ -503,7 +503,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
           onClick={() => setActiveSignalId(null)}
         >
           <div
-            className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-start justify-between gap-3">
@@ -526,7 +526,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
               </button>
             </div>
 
-            <div className="mb-4 flex items-start gap-2 rounded-lg bg-zinc-50 p-3">
+            <div className="mb-4 flex items-start gap-2 rounded-xl bg-zinc-50 p-3">
               <SparkleIcon className="mt-0.5 h-4 w-4 shrink-0 text-persian-blue" />
               {loadingSignalId === activeSignal.id ? (
                 <p className="text-sm text-zinc-400">Summarizing…</p>
@@ -557,7 +557,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
           onClick={() => setActiveContactId(null)}
         >
           <div
-            className="w-full max-w-lg rounded-lg bg-white p-6 shadow-lg"
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-start justify-between gap-3">
@@ -580,14 +580,14 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
             </div>
 
             {activeContact.outreachReason && (
-              <div className="mb-4 flex items-start gap-2 rounded-lg bg-zinc-50 p-3">
+              <div className="mb-4 flex items-start gap-2 rounded-xl bg-zinc-50 p-3">
                 <SparkleIcon className="mt-0.5 h-4 w-4 shrink-0 text-persian-blue" />
                 <p className="text-sm text-zinc-700">{activeContact.outreachReason}</p>
               </div>
             )}
 
             {activePush ? (
-              <div className="rounded-lg border border-zinc-200 p-3">
+              <div className="rounded-xl border border-zinc-200 p-3">
                 <p className="text-sm text-zinc-600">
                   Task{" "}
                   {pushedTaskUrl ? (
