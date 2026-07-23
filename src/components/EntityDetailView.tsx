@@ -342,12 +342,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
               <dt className="text-zinc-400">Company</dt>
               <dd className="text-zinc-700">
                 {detail.company.hubspotCompanyId ? (
-                  <span className="flex items-center gap-2">
-                    <span>{detail.company.name ?? detail.company.domain}</span>
-                    <span className="font-mono text-xs text-zinc-400">
-                      {detail.company.hubspotCompanyId}
-                    </span>
-                  </span>
+                  <span>{detail.company.name ?? detail.company.domain}</span>
                 ) : (
                   <span className="text-zinc-400">not in HubSpot</span>
                 )}
@@ -406,11 +401,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
                     {detail.contacts.map((c) => (
                       <li key={c.id} className="flex items-center gap-2">
                         <span>{contactLabel(c)}</span>
-                        {c.hubspotContactId ? (
-                          <span className="font-mono text-xs text-zinc-400">
-                            {c.hubspotContactId}
-                          </span>
-                        ) : (
+                        {!c.hubspotContactId && (
                           <span className="text-xs text-zinc-400">not in HubSpot</span>
                         )}
                         {c.id === detail.primaryContactId && (
