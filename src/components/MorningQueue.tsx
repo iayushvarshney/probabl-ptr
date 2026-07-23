@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { SearchIcon } from "@/components/icons";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { formatRelativeTime } from "@/lib/format";
 import type { QueueEntity } from "@/lib/queue";
 import {
@@ -13,6 +18,7 @@ import {
   RELATIONSHIP_STATE_ORDER,
 } from "@/lib/relationship-state";
 import type { RelationshipState } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 type StateFilter = "ALL" | RelationshipState | "NO_COMPANY" | "CUSTOMER";
 
@@ -109,14 +115,13 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
           )}
         </div>
 
-        <div className="relative">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
+        <div className="relative w-56">
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+          <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search companies…"
-            className="w-56 rounded-full border border-zinc-200 bg-white py-2 pl-9 pr-3 text-sm focus:border-persian-blue focus:outline-none"
+            className="h-9 rounded-full border-zinc-200 pl-9 focus-visible:border-persian-blue focus-visible:ring-persian-blue/20"
           />
         </div>
       </div>
@@ -130,68 +135,67 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((entity) => (
-            <Link
-              key={entity.id}
-              href={`/entities/${entity.id}`}
-              className="flex items-start gap-4 rounded-2xl border border-zinc-200 bg-white p-4 transition-colors hover:border-persian-blue/30 hover:bg-persian-blue/[0.02] sm:items-center"
-            >
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-persian-blue/10 text-base font-semibold text-persian-blue">
-                {initialFor(entity)}
-              </div>
+            <Link key={entity.id} href={`/entities/${entity.id}`} className="block">
+              <Card className="flex-row items-start gap-4 rounded-2xl border border-zinc-200 p-4 shadow-none ring-0 transition-colors hover:border-persian-blue/30 hover:bg-persian-blue/[0.02] sm:items-center">
+                <Avatar className="h-11 w-11 shrink-0">
+                  <AvatarFallback className="bg-persian-blue/10 text-base font-semibold text-persian-blue">
+                    {initialFor(entity)}
+                  </AvatarFallback>
+                </Avatar>
 
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-zinc-900">
-                    {entity.companyName ??
-                      entity.companyDomain ??
-                      entity.contactEmail ??
-                      "No company"}
-                  </span>
-                  {entity.companyDomain && entity.companyName && (
-                    <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
-                  )}
-                  {hasNoCompany(entity) ? (
-                    <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${NO_COMPANY_BADGE_CLASSES}`}
-                    >
-                      no company
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-medium text-zinc-900">
+                      {entity.companyName ??
+                        entity.companyDomain ??
+                        entity.contactEmail ??
+                        "No company"}
                     </span>
-                  ) : (
-                    <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
-                    >
-                      {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
-                    </span>
+                    {entity.companyDomain && entity.companyName && (
+                      <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
+                    )}
+                    {hasNoCompany(entity) ? (
+                      <Badge className={cn("rounded-full font-medium", NO_COMPANY_BADGE_CLASSES)}>
+                        no company
+                      </Badge>
+                    ) : (
+                      <Badge
+                        className={cn(
+                          "rounded-full font-medium",
+                          RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]
+                        )}
+                      >
+                        {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
+                      </Badge>
+                    )}
+                    {isCustomer(entity) && (
+                      <Badge className={cn("rounded-full font-medium", CUSTOMER_BADGE_CLASSES)}>
+                        Customer
+                      </Badge>
+                    )}
+                    {entity.isTargetAccount && <Flag label="Target" />}
+                    {entity.hasOpenOpp && <Flag label="Open opp" />}
+                    {entity.matchesIcp && <Flag label="ICP" />}
+                  </div>
+                  {entity.topReason && (
+                    <p className="mt-1 truncate text-sm text-zinc-500">{entity.topReason}</p>
                   )}
-                  {isCustomer(entity) && (
-                    <span
-                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${CUSTOMER_BADGE_CLASSES}`}
-                    >
-                      Customer
-                    </span>
+                  {entity.originChannels.length > 0 && (
+                    <p className="mt-0.5 text-xs text-zinc-400">
+                      via {entity.originChannels.join(", ")}
+                    </p>
                   )}
-                  {entity.isTargetAccount && <Flag label="Target" />}
-                  {entity.hasOpenOpp && <Flag label="Open opp" />}
-                  {entity.matchesIcp && <Flag label="ICP" />}
                 </div>
-                {entity.topReason && (
-                  <p className="mt-1 truncate text-sm text-zinc-500">{entity.topReason}</p>
-                )}
-                {entity.originChannels.length > 0 && (
-                  <p className="mt-0.5 text-xs text-zinc-400">
-                    via {entity.originChannels.join(", ")}
-                  </p>
-                )}
-              </div>
 
-              <div className="flex shrink-0 flex-col items-end gap-1.5">
-                <span className="rounded-full bg-persian-blue/10 px-2.5 py-1 font-mono text-sm font-semibold text-persian-blue">
-                  {entity.compositeScore.toFixed(1)}
-                </span>
-                <span className="text-xs text-zinc-400">
-                  {formatRelativeTime(entity.lastSignalAt)}
-                </span>
-              </div>
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <Badge className="rounded-full bg-persian-blue/10 px-2.5 py-1 font-mono text-sm font-semibold text-persian-blue">
+                    {entity.compositeScore.toFixed(1)}
+                  </Badge>
+                  <span className="text-xs text-zinc-400">
+                    {formatRelativeTime(entity.lastSignalAt)}
+                  </span>
+                </div>
+              </Card>
             </Link>
           ))}
         </div>
@@ -210,22 +214,25 @@ function FilterButton({
   children: React.ReactNode;
 }) {
   return (
-    <button
+    <Button
       type="button"
       onClick={onClick}
-      className={`rounded-full px-3.5 py-2 text-xs font-medium transition-colors ${
-        active ? "bg-persian-blue text-white" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-      }`}
+      className={cn(
+        "h-auto rounded-full px-3.5 py-2 text-xs font-medium",
+        active
+          ? "bg-persian-blue text-white hover:bg-persian-blue/90"
+          : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+      )}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
 function Flag({ label }: { label: string }) {
   return (
-    <span className="rounded border border-persian-blue/30 bg-persian-blue/5 px-1.5 py-0.5 text-[11px] font-medium text-persian-blue">
+    <Badge className="rounded border border-persian-blue/30 bg-persian-blue/5 font-medium text-persian-blue">
       {label}
-    </span>
+    </Badge>
   );
 }
