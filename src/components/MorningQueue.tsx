@@ -48,20 +48,18 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
     let noCompany = 0;
     let customer = 0;
     for (const e of entities) {
-      // "No company" is its own bucket — every no-domain/no-name signal
-      // resolves to NET_NEW_CONTACT_NET_NEW_COMPANY (nothing to match in
-      // HubSpot), but showing it under "Net new" too would double-count it
-      // across two tabs and conflate "not in HubSpot" with "no company at
-      // all."
-      if (hasNoCompany(e)) {
+      // Customer and "No company" are each their own bucket — a company
+      // tagged Customer shows only under "All" or "Customer", never also
+      // under a relationship-state tab (New contact/Known contact/Net new),
+      // same as "No company" is excluded from those. Otherwise a customer
+      // would double-count across two tabs.
+      if (isCustomer(e)) {
+        customer += 1;
+      } else if (hasNoCompany(e)) {
         noCompany += 1;
       } else {
         byState[e.relationshipState] += 1;
       }
-      // Customer is a cross-cutting lifecycle-stage flag, not a
-      // relationship state — a customer can also be "Known contact", so
-      // this count is independent, not subtracted from byState.
-      if (isCustomer(e)) customer += 1;
     }
     return { byState, noCompany, customer };
   }, [entities]);
@@ -74,7 +72,7 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       } else if (stateFilter === "CUSTOMER") {
         if (!isCustomer(e)) return false;
       } else if (stateFilter !== "ALL") {
-        if (hasNoCompany(e) || e.relationshipState !== stateFilter) return false;
+        if (hasNoCompany(e) || isCustomer(e) || e.relationshipState !== stateFilter) return false;
       }
       if (query) {
         const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""} ${e.contactEmail ?? ""}`.toLowerCase();
