@@ -26,8 +26,10 @@ export const RELATIONSHIP_STATE_BADGE_CLASSES: Record<RelationshipState, string>
 
 /** Not a RelationshipState — a cross-cutting HubSpot lifecycle-stage flag
  * that can co-occur with any of the three above (a customer can still be
- * e.g. "Known contact"). */
-export const CUSTOMER_BADGE_CLASSES = "border border-green-200 bg-green-50 text-green-700";
+ * e.g. "Known contact"). Solid #16A34A ("a clear green"), deliberately not
+ * a shade of the brand orange/blue, so it reads as its own distinct signal
+ * rather than a variant of the relationship-state badges. */
+export const CUSTOMER_BADGE_CLASSES = "bg-[#16A34A] text-white";
 
 /** Data-gap marker, not a relationship value judgment — kept neutral/gray,
  * just bordered for consistency with the other badges. */

@@ -18,9 +18,9 @@ export type QueueEntity = {
    * "No company" bucket's display identifier, since there's no company
    * name to show. */
   contactEmail: string | null;
-  /** HubSpot lifecycle stage (e.g. "Customer") — null if the company isn't
-   * in HubSpot or hasn't been resolved there yet. */
-  lifecycleStage: string | null;
+  /** True when HubSpot's lifecycle stage is "customer" — false if the
+   * company isn't in HubSpot or hasn't been resolved there yet. */
+  isCustomer: boolean;
 };
 
 type CompanyFields = {
@@ -29,7 +29,7 @@ type CompanyFields = {
   is_target_account: boolean;
   has_open_opp: boolean;
   matches_icp: boolean;
-  lifecycle_stage?: string | null;
+  is_customer?: boolean;
 };
 
 // supabase-js's untyped generic client infers embedded to-one relations as
@@ -61,8 +61,8 @@ function asList<T>(value: T | T[] | null): T[] {
 }
 
 const ENTITY_COLUMNS =
-  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, lifecycle_stage)";
-const ENTITY_COLUMNS_WITHOUT_LIFECYCLE_STAGE =
+  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, is_customer)";
+const ENTITY_COLUMNS_WITHOUT_IS_CUSTOMER =
   "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)";
 
 /** Ranked, pending entities for the morning queue — highest score first. */
@@ -82,7 +82,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
   if (error && isMissingColumnError(error)) {
     const fallback = await supabase
       .from("entities")
-      .select(ENTITY_COLUMNS_WITHOUT_LIFECYCLE_STAGE)
+      .select(ENTITY_COLUMNS_WITHOUT_IS_CUSTOMER)
       .eq("status", "pending")
       .order("composite_score", { ascending: false });
     data = fallback.data;
@@ -143,7 +143,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
       matchesIcp: company?.matches_icp ?? false,
       originChannels: [...(channelsByEntity.get(row.id) ?? [])].sort(),
       contactEmail: contactEmailByCompany.get(row.company_id) ?? null,
-      lifecycleStage: company?.lifecycle_stage ?? null,
+      isCustomer: company?.is_customer ?? false,
     };
   });
 }

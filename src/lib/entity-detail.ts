@@ -64,6 +64,9 @@ export type EntityDetail = {
     /** HubSpot lifecycle stage (Lead, MQL, SQL, Opportunity, Customer,
      * etc.) — null if the company isn't in HubSpot. */
     lifecycleStage: string | null;
+    /** True when HubSpot's lifecycle stage is "customer" — derived,
+     * defensive convenience flag (see companies.is_customer). */
+    isCustomer: boolean;
     /** The open deal's pipeline stage, if any (e.g. "Discovery", "Demo
      * scheduled") — null if there's no open deal. */
     dealStage: string | null;
@@ -306,7 +309,8 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
       hasOpenOpp: company.has_open_opp,
       matchesIcp: company.matches_icp,
       industry: hubspotIndustry ?? company.industry ?? null,
-      lifecycleStage: lifecycleStage ?? company.lifecycle_stage ?? null,
+      lifecycleStage: lifecycleStage ?? company.hubspot_lifecycle_stage ?? null,
+      isCustomer: company.is_customer ?? false,
       dealStage,
       lastActivityDate,
       website: website ?? (company.domain ? `https://${company.domain}` : null),

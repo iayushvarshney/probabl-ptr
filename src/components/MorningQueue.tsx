@@ -27,7 +27,7 @@ function hasNoCompany(entity: QueueEntity): boolean {
 }
 
 function isCustomer(entity: QueueEntity): boolean {
-  return entity.lifecycleStage === "Customer";
+  return entity.isCustomer;
 }
 
 function initialFor(entity: QueueEntity): string {

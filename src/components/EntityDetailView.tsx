@@ -304,7 +304,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
             <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
               {detail.status}
             </span>
-            {detail.company.lifecycleStage === "Customer" && (
+            {detail.company.isCustomer && (
               <span
                 className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${CUSTOMER_BADGE_CLASSES}`}
               >

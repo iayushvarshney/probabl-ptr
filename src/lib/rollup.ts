@@ -26,7 +26,8 @@ type CompanyRow = {
   employee_count_range?: string | null;
   preferred_technology?: string | null;
   country?: string | null;
-  lifecycle_stage?: string | null;
+  hubspot_lifecycle_stage?: string | null;
+  is_customer?: boolean;
 };
 
 // Reo enrichment + HubSpot lifecycle-stage columns (see supabase-schema.sql)
@@ -42,7 +43,8 @@ const ENRICHMENT_COLUMNS = [
   "employee_count_range",
   "preferred_technology",
   "country",
-  "lifecycle_stage",
+  "hubspot_lifecycle_stage",
+  "is_customer",
 ] as const;
 
 function withoutEnrichmentColumns<T extends Record<string, unknown>>(row: T): T {
@@ -110,9 +112,9 @@ async function upsertCompany(params: {
   preferredTechnology?: string;
   country?: string;
   /** HubSpot's lifecycle stage, when the company is matched there this
-   * signal — persisted so the Morning Queue can filter by it (e.g.
+   * signal — persisted so the Morning Queue can tag/filter by it (e.g.
    * "Customer") without a live HubSpot call per entity. */
-  lifecycleStage?: string;
+  hubspotLifecycleStage?: string;
 }): Promise<CompanyRow> {
   let existing: CompanyRow | null = null;
 
@@ -157,7 +159,9 @@ async function upsertCompany(params: {
   const mergedPreferredTechnology =
     params.preferredTechnology ?? existing?.preferred_technology ?? null;
   const mergedCountry = params.country ?? existing?.country ?? null;
-  const mergedLifecycleStage = params.lifecycleStage ?? existing?.lifecycle_stage ?? null;
+  const mergedHubspotLifecycleStage =
+    params.hubspotLifecycleStage ?? existing?.hubspot_lifecycle_stage ?? null;
+  const isCustomer = (mergedHubspotLifecycleStage ?? "").toLowerCase() === "customer";
 
   // Evaluated against the merged (new-signal-or-existing) enrichment, so a
   // company's ICP match reflects everything we know about it, not just
@@ -186,7 +190,8 @@ async function upsertCompany(params: {
     employee_count_range: mergedEmployeeCountRange,
     preferred_technology: mergedPreferredTechnology,
     country: mergedCountry,
-    lifecycle_stage: mergedLifecycleStage,
+    hubspot_lifecycle_stage: mergedHubspotLifecycleStage,
+    is_customer: isCustomer,
   };
 
   if (existing) {
@@ -367,7 +372,7 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
     existingCompanyId: existingNoDomainCompanyId,
     hubspotCompanyId: hubspotCompany?.id,
     isTargetAccount: hubspotCompany?.isTargetAccount,
-    lifecycleStage: hubspotCompany?.lifecycleStage ?? undefined,
+    hubspotLifecycleStage: hubspotCompany?.lifecycleStage ?? undefined,
     hasOpenOpp,
     customerFit: signal.company_enrichment?.customerFit,
     activityScore: signal.company_enrichment?.activityScore,
