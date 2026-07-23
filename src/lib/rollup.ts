@@ -26,13 +26,14 @@ type CompanyRow = {
   employee_count_range?: string | null;
   preferred_technology?: string | null;
   country?: string | null;
+  lifecycle_stage?: string | null;
 };
 
-// Reo enrichment columns (see supabase-schema.sql) — if the migration
-// hasn't been run yet on a given environment, writes touching these
-// columns fail with Postgres "undefined column" (42703). Rather than
-// break the whole rollup (including plain PostHog signals) on that,
-// detect it and silently retry without them, once, with a warning.
+// Reo enrichment + HubSpot lifecycle-stage columns (see supabase-schema.sql)
+// — if a migration hasn't been run yet on a given environment, writes
+// touching these columns fail with Postgres "undefined column" (42703).
+// Rather than break the whole rollup (including plain PostHog signals) on
+// that, detect it and silently retry without them, once, with a warning.
 const ENRICHMENT_COLUMNS = [
   "customer_fit",
   "activity_score",
@@ -41,6 +42,7 @@ const ENRICHMENT_COLUMNS = [
   "employee_count_range",
   "preferred_technology",
   "country",
+  "lifecycle_stage",
 ] as const;
 
 function withoutEnrichmentColumns<T extends Record<string, unknown>>(row: T): T {
@@ -107,6 +109,10 @@ async function upsertCompany(params: {
   employeeCountRange?: string;
   preferredTechnology?: string;
   country?: string;
+  /** HubSpot's lifecycle stage, when the company is matched there this
+   * signal — persisted so the Morning Queue can filter by it (e.g.
+   * "Customer") without a live HubSpot call per entity. */
+  lifecycleStage?: string;
 }): Promise<CompanyRow> {
   let existing: CompanyRow | null = null;
 
@@ -151,6 +157,7 @@ async function upsertCompany(params: {
   const mergedPreferredTechnology =
     params.preferredTechnology ?? existing?.preferred_technology ?? null;
   const mergedCountry = params.country ?? existing?.country ?? null;
+  const mergedLifecycleStage = params.lifecycleStage ?? existing?.lifecycle_stage ?? null;
 
   // Evaluated against the merged (new-signal-or-existing) enrichment, so a
   // company's ICP match reflects everything we know about it, not just
@@ -179,6 +186,7 @@ async function upsertCompany(params: {
     employee_count_range: mergedEmployeeCountRange,
     preferred_technology: mergedPreferredTechnology,
     country: mergedCountry,
+    lifecycle_stage: mergedLifecycleStage,
   };
 
   if (existing) {
@@ -359,6 +367,7 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
     existingCompanyId: existingNoDomainCompanyId,
     hubspotCompanyId: hubspotCompany?.id,
     isTargetAccount: hubspotCompany?.isTargetAccount,
+    lifecycleStage: hubspotCompany?.lifecycleStage ?? undefined,
     hasOpenOpp,
     customerFit: signal.company_enrichment?.customerFit,
     activityScore: signal.company_enrichment?.activityScore,

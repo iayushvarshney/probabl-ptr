@@ -1,3 +1,4 @@
+import { isMissingColumnError } from "@/lib/db-errors";
 import { supabase } from "@/lib/supabase";
 import type { OriginChannel, RelationshipState } from "@/lib/types";
 
@@ -17,6 +18,9 @@ export type QueueEntity = {
    * "No company" bucket's display identifier, since there's no company
    * name to show. */
   contactEmail: string | null;
+  /** HubSpot lifecycle stage (e.g. "Customer") — null if the company isn't
+   * in HubSpot or hasn't been resolved there yet. */
+  lifecycleStage: string | null;
 };
 
 type CompanyFields = {
@@ -25,6 +29,7 @@ type CompanyFields = {
   is_target_account: boolean;
   has_open_opp: boolean;
   matches_icp: boolean;
+  lifecycle_stage?: string | null;
 };
 
 // supabase-js's untyped generic client infers embedded to-one relations as
@@ -55,15 +60,34 @@ function asList<T>(value: T | T[] | null): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+const ENTITY_COLUMNS =
+  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, lifecycle_stage)";
+const ENTITY_COLUMNS_WITHOUT_LIFECYCLE_STAGE =
+  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)";
+
 /** Ranked, pending entities for the morning queue — highest score first. */
 export async function getQueueEntities(): Promise<QueueEntity[]> {
-  const { data, error } = await supabase
-    .from("entities")
-    .select(
-      "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)"
-    )
-    .eq("status", "pending")
-    .order("composite_score", { ascending: false });
+  let data: unknown;
+  let error: { code?: string; message?: string } | null;
+  {
+    const first = await supabase
+      .from("entities")
+      .select(ENTITY_COLUMNS)
+      .eq("status", "pending")
+      .order("composite_score", { ascending: false });
+    data = first.data;
+    error = first.error;
+  }
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await supabase
+      .from("entities")
+      .select(ENTITY_COLUMNS_WITHOUT_LIFECYCLE_STAGE)
+      .eq("status", "pending")
+      .order("composite_score", { ascending: false });
+    data = fallback.data;
+    error = fallback.error;
+  }
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as EntityRow[];
@@ -119,6 +143,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
       matchesIcp: company?.matches_icp ?? false,
       originChannels: [...(channelsByEntity.get(row.id) ?? [])].sort(),
       contactEmail: contactEmailByCompany.get(row.company_id) ?? null,
+      lifecycleStage: company?.lifecycle_stage ?? null,
     };
   });
 }

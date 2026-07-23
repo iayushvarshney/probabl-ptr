@@ -180,3 +180,12 @@ alter table pushes add column if not exists contact_id uuid references contacts(
 -- re-run.
 -- ─────────────────────────────────────────────────────────────
 alter table companies add column if not exists about_blurb text;
+
+-- ─────────────────────────────────────────────────────────────
+-- companies: HubSpot lifecycle stage, persisted during rollup (whenever a
+-- signal resolves to a HubSpot-matched company) so the Morning Queue can
+-- filter by it (e.g. "Customer") without a live HubSpot call per entity on
+-- every queue load. The entity detail page still fetches it live and only
+-- falls back to this stored value if that live call fails.
+-- ─────────────────────────────────────────────────────────────
+alter table companies add column if not exists lifecycle_stage text;

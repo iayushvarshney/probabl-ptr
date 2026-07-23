@@ -306,7 +306,7 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
       hasOpenOpp: company.has_open_opp,
       matchesIcp: company.matches_icp,
       industry: hubspotIndustry ?? company.industry ?? null,
-      lifecycleStage,
+      lifecycleStage: lifecycleStage ?? company.lifecycle_stage ?? null,
       dealStage,
       lastActivityDate,
       website: website ?? (company.domain ? `https://${company.domain}` : null),

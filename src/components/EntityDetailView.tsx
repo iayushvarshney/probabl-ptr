@@ -9,6 +9,7 @@ import { formatRelativeTime } from "@/lib/format";
 import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import type { HubSpotOwner, HubSpotTaskPriority, HubSpotTaskType } from "@/lib/hubspot";
 import {
+  CUSTOMER_BADGE_CLASSES,
   RELATIONSHIP_STATE_BADGE_CLASSES,
   RELATIONSHIP_STATE_LABELS,
 } from "@/lib/relationship-state";
@@ -303,6 +304,13 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
             <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600">
               {detail.status}
             </span>
+            {detail.company.lifecycleStage === "Customer" && (
+              <span
+                className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${CUSTOMER_BADGE_CLASSES}`}
+              >
+                Customer
+              </span>
+            )}
             {detail.company.isTargetAccount && <Flag label="Target" />}
             {detail.company.hasOpenOpp && <Flag label="Open opp" />}
             {detail.company.matchesIcp && <Flag label="ICP" />}

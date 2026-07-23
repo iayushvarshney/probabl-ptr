@@ -6,16 +6,22 @@ import { SearchIcon } from "@/components/icons";
 import { formatRelativeTime } from "@/lib/format";
 import type { QueueEntity } from "@/lib/queue";
 import {
+  CUSTOMER_BADGE_CLASSES,
+  NO_COMPANY_BADGE_CLASSES,
   RELATIONSHIP_STATE_BADGE_CLASSES,
   RELATIONSHIP_STATE_LABELS,
   RELATIONSHIP_STATE_ORDER,
 } from "@/lib/relationship-state";
 import type { RelationshipState } from "@/lib/types";
 
-type StateFilter = "ALL" | RelationshipState | "NO_COMPANY";
+type StateFilter = "ALL" | RelationshipState | "NO_COMPANY" | "CUSTOMER";
 
 function hasNoCompany(entity: QueueEntity): boolean {
   return !entity.companyName && !entity.companyDomain;
+}
+
+function isCustomer(entity: QueueEntity): boolean {
+  return entity.lifecycleStage === "Customer";
 }
 
 function initialFor(entity: QueueEntity): string {
@@ -34,6 +40,7 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       NET_NEW_CONTACT_NET_NEW_COMPANY: 0,
     };
     let noCompany = 0;
+    let customer = 0;
     for (const e of entities) {
       // "No company" is its own bucket — every no-domain/no-name signal
       // resolves to NET_NEW_CONTACT_NET_NEW_COMPANY (nothing to match in
@@ -45,8 +52,12 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       } else {
         byState[e.relationshipState] += 1;
       }
+      // Customer is a cross-cutting lifecycle-stage flag, not a
+      // relationship state — a customer can also be "Known contact", so
+      // this count is independent, not subtracted from byState.
+      if (isCustomer(e)) customer += 1;
     }
-    return { byState, noCompany };
+    return { byState, noCompany, customer };
   }, [entities]);
 
   const filtered = useMemo(() => {
@@ -54,6 +65,8 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
     return entities.filter((e) => {
       if (stateFilter === "NO_COMPANY") {
         if (!hasNoCompany(e)) return false;
+      } else if (stateFilter === "CUSTOMER") {
+        if (!isCustomer(e)) return false;
       } else if (stateFilter !== "ALL") {
         if (hasNoCompany(e) || e.relationshipState !== stateFilter) return false;
       }
@@ -81,6 +94,11 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
               {RELATIONSHIP_STATE_LABELS[state]} ({counts.byState[state]})
             </FilterButton>
           ))}
+          {counts.customer > 0 && (
+            <FilterButton active={stateFilter === "CUSTOMER"} onClick={() => setStateFilter("CUSTOMER")}>
+              Customer ({counts.customer})
+            </FilterButton>
+          )}
           {counts.noCompany > 0 && (
             <FilterButton
               active={stateFilter === "NO_COMPANY"}
@@ -133,7 +151,9 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
                     <span className="text-xs text-zinc-400">{entity.companyDomain}</span>
                   )}
                   {hasNoCompany(entity) ? (
-                    <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${NO_COMPANY_BADGE_CLASSES}`}
+                    >
                       no company
                     </span>
                   ) : (
@@ -141,6 +161,13 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
                       className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${RELATIONSHIP_STATE_BADGE_CLASSES[entity.relationshipState]}`}
                     >
                       {RELATIONSHIP_STATE_LABELS[entity.relationshipState]}
+                    </span>
+                  )}
+                  {isCustomer(entity) && (
+                    <span
+                      className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${CUSTOMER_BADGE_CLASSES}`}
+                    >
+                      Customer
                     </span>
                   )}
                   {entity.isTargetAccount && <Flag label="Target" />}
