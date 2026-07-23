@@ -2,6 +2,7 @@ import type { Message } from "@anthropic-ai/sdk/resources/index";
 import { anthropic, CLAUDE_MODEL, USE_MOCK_CLAUDE } from "@/lib/anthropic";
 import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import { RELATIONSHIP_STATE_LABELS } from "@/lib/relationship-state";
+import { getMasterPrompt } from "@/lib/settings";
 
 function extractText(message: Message): string {
   return message.content
@@ -274,6 +275,11 @@ export type OutreachDraft = { subject: string; body: string };
  * Secondary feature: a short editable outreach email draft for one specific
  * contact, generated on demand when that contact is opened in the task
  * modal. Purely a writing aid — has no bearing on scoring or classification.
+ *
+ * The admin-configurable master prompt (Settings → Master Prompt) is read
+ * ONLY here — not by generateEntitySummary, generateSignalSummaries,
+ * generateContactRecommendations, or generateCompanyBlurb — so it can never
+ * influence scoring, prioritization, or any other narration.
  */
 export async function generateOutreachDraft(
   detail: EntityDetail,
@@ -289,16 +295,37 @@ export async function generateOutreachDraft(
 
   const contactName = targetContact.fullName?.split(" ")[0] ?? "there";
 
+  // Mechanical formatting requirements the code depends on to parse the
+  // response (contact name, the "Subject: ..." line) — these always apply,
+  // regardless of what the master prompt says, since they're structural,
+  // not stylistic.
+  const formatInstructions =
+    `Address the recipient as "${contactName}". ` +
+    'Respond with EXACTLY: a first line "Subject: ..." followed by the email body on the ' +
+    "following lines. No other commentary.";
+
+  // Default tone/style rules — used only when there's no custom master
+  // prompt, so behavior is unchanged for anyone who hasn't set one.
+  const defaultStyleInstructions =
+    "You are a sales rep at Probabl (the company behind scikit-learn) drafting a short, " +
+    "friendly, low-pressure outreach email based on a lead's recent activity. Reference the " +
+    "specific signals naturally, keep it under 120 words, no hard sell, one clear soft CTA.";
+
+  const masterPrompt = await getMasterPrompt();
+
+  // Master prompt (when set) is the HIGH-PRIORITY instruction block, placed
+  // first in the system prompt — i.e. before the per-prospect context, which
+  // is injected separately below as the user message. It replaces the
+  // built-in tone/style defaults (that's the point of setting one); the
+  // mechanical format instructions always still apply on top of it.
+  const system = masterPrompt
+    ? `${masterPrompt}\n\n${formatInstructions}`
+    : `${defaultStyleInstructions} ${formatInstructions}`;
+
   const message = await anthropic.messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 400,
-    system:
-      "You are a sales rep at Probabl (the company behind scikit-learn) drafting a short, " +
-      "friendly, low-pressure outreach email based on a lead's recent activity. Reference the " +
-      "specific signals naturally, keep it under 120 words, no hard sell, one clear soft CTA. " +
-      `Address the recipient as "${contactName}". ` +
-      'Respond with EXACTLY: a first line "Subject: ..." followed by the email body on the ' +
-      "following lines. No other commentary.",
+    system,
     messages: [{ role: "user", content: buildContext(detail) }],
   });
 

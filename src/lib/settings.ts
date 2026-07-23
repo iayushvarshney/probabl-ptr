@@ -2,7 +2,7 @@ import { DEFAULT_ICP_CONFIG, type IcpConfig } from "@/lib/icp.config";
 import { DEFAULT_SCORING_WEIGHTS, type ScoringWeights } from "@/lib/scoring.config";
 import { supabase } from "@/lib/supabase";
 
-type SettingsSection = "scoring" | "icp";
+type SettingsSection = "scoring" | "icp" | "masterPrompt";
 
 type SettingsRow = {
   id: string;
@@ -151,4 +151,47 @@ export async function saveIcpConfig(config: IcpConfig): Promise<number> {
 export async function resetIcpConfig(): Promise<{ config: IcpConfig; version: number }> {
   const row = await saveNewVersion("icp", DEFAULT_ICP_CONFIG);
   return { config: DEFAULT_ICP_CONFIG, version: row.config_version };
+}
+
+// --- Master prompt (outreach drafting only) -------------------------------
+// Freeform instructions applied ONLY to generateOutreachDraft (see
+// claude-summary.ts) — never read by the entity summary, per-signal
+// summary, contact recommendation, or company blurb generators. Scoring is
+// deterministic and never touches Claude at all, let alone this.
+
+export const DEFAULT_MASTER_PROMPT =
+  "Write in a warm, concise tone. Reference Probabl's scikit-learn heritage where relevant. " +
+  'Keep under 120 words. Never be pushy. Sign off as "The Probabl team".';
+
+/** Empty string means "no custom instructions" — the caller (
+ * generateOutreachDraft) falls back to its own built-in style rules in
+ * that case, whether because the admin explicitly cleared the field or
+ * because the settings table isn't migrated yet. */
+export async function getMasterPrompt(): Promise<string> {
+  try {
+    const row = await seedIfMissing("masterPrompt", { masterPrompt: DEFAULT_MASTER_PROMPT });
+    return (row.config.masterPrompt as string | undefined) ?? "";
+  } catch (err) {
+    console.warn(
+      "[settings] Could not read the master prompt from the settings table (probably not " +
+        "migrated yet) — outreach drafts will use the built-in default style.",
+      err
+    );
+    return "";
+  }
+}
+
+export async function getMasterPromptRow(): Promise<{ masterPrompt: string; version: number }> {
+  const row = await seedIfMissing("masterPrompt", { masterPrompt: DEFAULT_MASTER_PROMPT });
+  return { masterPrompt: (row.config.masterPrompt as string | undefined) ?? "", version: row.config_version };
+}
+
+export async function saveMasterPrompt(masterPrompt: string): Promise<number> {
+  const row = await saveNewVersion("masterPrompt", { masterPrompt });
+  return row.config_version;
+}
+
+export async function resetMasterPrompt(): Promise<{ masterPrompt: string; version: number }> {
+  const row = await saveNewVersion("masterPrompt", { masterPrompt: DEFAULT_MASTER_PROMPT });
+  return { masterPrompt: DEFAULT_MASTER_PROMPT, version: row.config_version };
 }

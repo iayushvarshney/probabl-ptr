@@ -1,6 +1,6 @@
 import { SettingsView } from "@/components/SettingsView";
 import { isMissingTableError } from "@/lib/db-errors";
-import { getIcpConfigRow, getScoringWeightsRow } from "@/lib/settings";
+import { getIcpConfigRow, getMasterPromptRow, getScoringWeightsRow } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -25,8 +25,11 @@ create index if not exists idx_settings_section_latest on settings(section, conf
 
 export default async function SettingsPage() {
   try {
-    const [{ weights, version: weightsVersion }, { config: icp, version: icpVersion }] =
-      await Promise.all([getScoringWeightsRow(), getIcpConfigRow()]);
+    const [
+      { weights, version: weightsVersion },
+      { config: icp, version: icpVersion },
+      { masterPrompt, version: masterPromptVersion },
+    ] = await Promise.all([getScoringWeightsRow(), getIcpConfigRow(), getMasterPromptRow()]);
 
     return (
       <div className="mx-auto w-full max-w-4xl flex-1 px-6 py-8">
@@ -35,6 +38,8 @@ export default async function SettingsPage() {
           initialWeightsVersion={weightsVersion}
           initialIcp={icp}
           initialIcpVersion={icpVersion}
+          initialMasterPrompt={masterPrompt}
+          initialMasterPromptVersion={masterPromptVersion}
         />
       </div>
     );

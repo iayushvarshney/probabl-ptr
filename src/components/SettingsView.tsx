@@ -242,13 +242,17 @@ export function SettingsView({
   initialWeightsVersion,
   initialIcp,
   initialIcpVersion,
+  initialMasterPrompt,
+  initialMasterPromptVersion,
 }: {
   initialWeights: ScoringWeights;
   initialWeightsVersion: number;
   initialIcp: IcpConfig;
   initialIcpVersion: number;
+  initialMasterPrompt: string;
+  initialMasterPromptVersion: number;
 }) {
-  const [activeTab, setActiveTab] = useState<"weights" | "icp">("weights");
+  const [activeTab, setActiveTab] = useState<"weights" | "icp" | "masterPrompt">("weights");
 
   const [weights, setWeights] = useState(initialWeights);
   const [weightsVersion, setWeightsVersion] = useState(initialWeightsVersion);
@@ -261,6 +265,12 @@ export function SettingsView({
   const [isSavingIcp, setIsSavingIcp] = useState(false);
   const [icpMessage, setIcpMessage] = useState<string | null>(null);
   const [icpError, setIcpError] = useState<string | null>(null);
+
+  const [masterPrompt, setMasterPrompt] = useState(initialMasterPrompt);
+  const [masterPromptVersion, setMasterPromptVersion] = useState(initialMasterPromptVersion);
+  const [isSavingMasterPrompt, setIsSavingMasterPrompt] = useState(false);
+  const [masterPromptMessage, setMasterPromptMessage] = useState<string | null>(null);
+  const [masterPromptError, setMasterPromptError] = useState<string | null>(null);
 
   async function handleSaveScoring() {
     setIsSavingScoring(true);
@@ -350,6 +360,45 @@ export function SettingsView({
     }
   }
 
+  async function handleSaveMasterPrompt() {
+    setIsSavingMasterPrompt(true);
+    setMasterPromptError(null);
+    setMasterPromptMessage(null);
+    try {
+      const res = await fetch("/api/settings/master-prompt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ masterPrompt }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Save failed");
+      setMasterPromptVersion(json.version);
+      setMasterPromptMessage(`Saved as v${json.version}.`);
+    } catch (err) {
+      setMasterPromptError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setIsSavingMasterPrompt(false);
+    }
+  }
+
+  async function handleResetMasterPrompt() {
+    setIsSavingMasterPrompt(true);
+    setMasterPromptError(null);
+    setMasterPromptMessage(null);
+    try {
+      const res = await fetch("/api/settings/master-prompt/reset", { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Reset failed");
+      setMasterPrompt(json.masterPrompt);
+      setMasterPromptVersion(json.version);
+      setMasterPromptMessage(`Reset to default as v${json.version}.`);
+    } catch (err) {
+      setMasterPromptError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setIsSavingMasterPrompt(false);
+    }
+  }
+
   const signalTypes = Object.keys(weights.signalTypeWeights) as SignalType[];
   const relationshipStates = Object.keys(weights.relationshipWeights) as RelationshipState[];
 
@@ -384,6 +433,17 @@ export function SettingsView({
           }`}
         >
           ICP definition
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("masterPrompt")}
+          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+            activeTab === "masterPrompt"
+              ? "bg-persian-blue/10 text-persian-blue"
+              : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
+          }`}
+        >
+          Master Prompt
         </button>
       </div>
 
@@ -612,6 +672,36 @@ export function SettingsView({
           {icpError && <p className="text-sm text-red-600">{icpError}</p>}
 
           <SaveResetButtons onSave={handleSaveIcp} onReset={handleResetIcp} isSaving={isSavingIcp} />
+        </div>
+      </Section>
+      )}
+
+      {activeTab === "masterPrompt" && (
+      <Section title={`Master Prompt (v${masterPromptVersion})`}>
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-zinc-500">
+            These instructions are applied to every outreach draft Claude generates. Use it to
+            set tone, positioning, and rules.
+          </p>
+          <textarea
+            value={masterPrompt}
+            onChange={(e) => setMasterPrompt(e.target.value)}
+            rows={10}
+            placeholder={
+              'Write in a warm, concise tone. Reference Probabl’s scikit-learn heritage where ' +
+              "relevant. Keep under 120 words. Never be pushy. Sign off as “The Probabl team”."
+            }
+            className="w-full rounded border border-zinc-300 px-3 py-2 text-sm focus:border-persian-blue focus:outline-none"
+          />
+
+          {masterPromptMessage && <p className="text-sm text-green-700">{masterPromptMessage}</p>}
+          {masterPromptError && <p className="text-sm text-red-600">{masterPromptError}</p>}
+
+          <SaveResetButtons
+            onSave={handleSaveMasterPrompt}
+            onReset={handleResetMasterPrompt}
+            isSaving={isSavingMasterPrompt}
+          />
         </div>
       </Section>
       )}
