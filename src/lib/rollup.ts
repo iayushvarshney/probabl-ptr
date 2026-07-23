@@ -4,6 +4,7 @@ import { resolveIdentity } from "@/lib/identity";
 import {
   findCompanyByDomain,
   findContactByEmail,
+  findContactByNameInCompany,
   hasOpenDeal,
 } from "@/lib/hubspot";
 import { matchesIcp } from "@/lib/icp";
@@ -327,9 +328,16 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
     ? await findCompanyByDomain(identity.company.domain)
     : null;
 
+  // Email is the reliable match; when a signal has none at all (common for
+  // LinkedIn-sourced Reo activity — no business email, only a profile URL),
+  // fall back to a name search scoped to this specific HubSpot company's own
+  // contacts, rather than silently treating them as "not in HubSpot" purely
+  // because Reo didn't hand us an email.
   const hubspotContact = identity.person.email
     ? await findContactByEmail(identity.person.email)
-    : null;
+    : hubspotCompany && identity.person.full_name
+      ? await findContactByNameInCompany(hubspotCompany.id, identity.person.full_name)
+      : null;
 
   const isCompanyKnown = !!hubspotCompany;
   const isContactKnown = !!hubspotContact;
@@ -384,7 +392,12 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
   });
 
   const contact = await upsertContact({
-    email: identity.person.email,
+    // If we only found them via the name-in-company fallback above, HubSpot
+    // may well have a real email on file that the signal itself never
+    // carried — backfill it so future signals resolve this same person by
+    // email (the reliable path) instead of re-running the name fallback
+    // every time.
+    email: identity.person.email ?? hubspotContact?.email ?? undefined,
     fullName: identity.person.full_name,
     companyId: company.id,
     hubspotContactId: hubspotContact?.id,

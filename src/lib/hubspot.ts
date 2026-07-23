@@ -142,6 +142,89 @@ export async function findContactByEmail(
   };
 }
 
+function normalizeNamePart(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/** True for an exact first-name match plus a last-name match that's exact
+ * OR one name contains the other — covers compound/hyphenated surnames a
+ * source signal only gave us part of (e.g. Reo's "Rastgoo" vs HubSpot's
+ * "Rastgoo-Lemaitre"). First name must always match exactly; this never
+ * gets fuzzier than that, to keep false positives rare. */
+function namesLikelyMatch(
+  a: { first: string; last: string },
+  b: { first: string; last: string }
+): boolean {
+  if (normalizeNamePart(a.first) !== normalizeNamePart(b.first)) return false;
+  const lastA = normalizeNamePart(a.last);
+  const lastB = normalizeNamePart(b.last);
+  if (!lastA || !lastB) return false;
+  return lastA === lastB || lastA.includes(lastB) || lastB.includes(lastA);
+}
+
+/**
+ * Fallback for when a signal has no email at all (common for LinkedIn-
+ * sourced Reo activity) — searches only among contacts already associated
+ * with this specific HubSpot company, never a blind global name search, so
+ * a same-named person at a different company can't be mismatched. Returns
+ * null (never guesses) unless exactly one contact's name matches.
+ */
+export async function findContactByNameInCompany(
+  companyId: string,
+  fullName: string
+): Promise<HubSpotContact | null> {
+  if (USE_MOCK_HUBSPOT) return null; // no fixture for this path — email mocks cover the common case
+
+  const [firstName, ...rest] = fullName.trim().split(/\s+/);
+  const lastName = rest.join(" ");
+  if (!firstName || !lastName) return null; // not enough to match on safely
+
+  const contactIds: string[] = [];
+  let after: string | undefined;
+  do {
+    const query = after ? `?limit=100&after=${encodeURIComponent(after)}` : "?limit=100";
+    const assoc = await hubspotRequest<{
+      results: Array<{ id: string }>;
+      paging?: { next?: { after: string } };
+    }>(`/crm/v3/objects/companies/${companyId}/associations/contacts${query}`);
+    contactIds.push(...assoc.results.map((r) => r.id));
+    after = assoc.paging?.next?.after;
+    // Sane cap — a company with 500+ HubSpot contacts is an edge case not
+    // worth unbounded pagination for what's only a fallback lookup.
+  } while (after && contactIds.length < 500);
+
+  if (contactIds.length === 0) return null;
+
+  const candidates: HubSpotContact[] = [];
+  for (let i = 0; i < contactIds.length; i += 100) {
+    const chunk = contactIds.slice(i, i + 100);
+    const batch = await hubspotRequest<{
+      results: Array<{ id: string; properties: { email?: string; firstname?: string; lastname?: string } }>;
+    }>("/crm/v3/objects/contacts/batch/read", {
+      method: "POST",
+      body: JSON.stringify({
+        properties: ["email", "firstname", "lastname"],
+        inputs: chunk.map((id) => ({ id })),
+      }),
+    });
+    for (const c of batch.results) {
+      candidates.push({
+        id: c.id,
+        email: c.properties.email ?? null,
+        firstName: c.properties.firstname ?? null,
+        lastName: c.properties.lastname ?? null,
+      });
+    }
+  }
+
+  const matches = candidates.filter((c) =>
+    namesLikelyMatch({ first: firstName, last: lastName }, { first: c.firstName ?? "", last: c.lastName ?? "" })
+  );
+
+  // Ambiguous (zero, or more than one) — never guess.
+  return matches.length === 1 ? matches[0] : null;
+}
+
 // --- Companies --------------------------------------------------------------
 
 let cachedTargetAccountProperty: string | null = null;
