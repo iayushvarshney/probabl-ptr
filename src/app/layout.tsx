@@ -10,7 +10,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Probabl Ptr",
+  title: "Probabl Sigint",
   description: "GTM signal-intelligence queue for Probabl",
 };
 

@@ -43,7 +43,7 @@ export default async function LoginPage({
         action={login}
         className="w-full max-w-sm rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
       >
-        <h1 className="mb-1 text-lg font-semibold text-persian-blue">Probabl Ptr</h1>
+        <h1 className="mb-1 text-lg font-semibold text-persian-blue">Probabl Sigint</h1>
         <p className="mb-4 text-sm text-zinc-500">Enter the shared password to continue.</p>
 
         {next && <input type="hidden" name="next" value={next} />}
