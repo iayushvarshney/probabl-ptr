@@ -1,3 +1,27 @@
+export function humanizeToken(token: string): string {
+  return token
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\bjs\b/, "JS")
+    .replace(/\bapi\b/, "API")
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+/** Display label for a signal: Reo's "Source · Activity" pair when both are
+ * present (e.g. "Document · Page visit"), the flat signal_type otherwise
+ * (PostHog, or pre-migration Reo rows without a source_type/activity_type
+ * pair). */
+export function formatSignalLabel(
+  signalType: string,
+  sourceType?: string | null,
+  activityType?: string | null
+): string {
+  if (sourceType && activityType) {
+    return `${humanizeToken(sourceType)} · ${humanizeToken(activityType)}`;
+  }
+  return signalType.replace(/_/g, " ");
+}
+
 export function formatRelativeTime(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "—";
 

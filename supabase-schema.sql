@@ -207,3 +207,17 @@ alter table companies add column if not exists is_customer boolean not null defa
 alter table companies add column if not exists developer_funnel text;
 alter table contacts add column if not exists title text;
 alter table contacts add column if not exists last_developer_payload jsonb;
+
+-- ─────────────────────────────────────────────────────────────
+-- signals: Reo's real taxonomy — source_type + activity_type, preserved
+-- verbatim (e.g. "DOCUMENT"/"PAGE_VISIT") instead of collapsed into a flat
+-- generic signal_type. The SAME activity_type means different things under
+-- different source_types (a PAGE_VISIT under DOCUMENT is high-intent "docs
+-- review"; under WEBSITE it's a generic view), so scoring keys on this pair
+-- for Reo signals — see REO_ACTIVITY_WEIGHTS in src/lib/scoring.config.ts.
+-- Null for PostHog signals and any pre-migration Reo rows not yet
+-- backfilled. Safe to re-run.
+-- ─────────────────────────────────────────────────────────────
+alter table signals add column if not exists source_type text;
+alter table signals add column if not exists activity_type text;
+create index if not exists idx_signals_source_activity_type on signals(source_type, activity_type);

@@ -2,10 +2,71 @@
 
 import { useState } from "react";
 import { Field, Section } from "@/components/ui";
-import { PlusIcon, RefreshIcon, SaveIcon, XIcon } from "@/components/icons";
+import { ChevronDownIcon, PlusIcon, RefreshIcon, SaveIcon, XIcon } from "@/components/icons";
 import { EMPLOYEE_COUNT_RANGE_OPTIONS, type IcpConfig } from "@/lib/icp.config";
-import type { ScoringWeights } from "@/lib/scoring.config";
+import type { ReoSourceType, ScoringWeights } from "@/lib/scoring.config";
 import type { RelationshipState, SignalType } from "@/lib/types";
+
+// Display order + labels for Reo's source_type groups — matches the shape
+// of REO_ACTIVITY_WEIGHTS in scoring.config.ts. GITHUB/DOCUMENT/WEBSITE/
+// PRODUCT_JS are wired up via Reo today; the rest aren't sending data yet.
+const REO_SOURCE_ORDER: ReoSourceType[] = [
+  "GITHUB",
+  "DOCUMENT",
+  "WEBSITE",
+  "PRODUCT_JS",
+  "CODE_INTERACTIONS",
+  "SLACK",
+  "LINKEDIN",
+  "PRODUCT_API",
+];
+
+const REO_SOURCE_LABELS: Record<ReoSourceType, string> = {
+  GITHUB: "GitHub",
+  DOCUMENT: "Documentation",
+  WEBSITE: "Website",
+  PRODUCT_JS: "Product",
+  CODE_INTERACTIONS: "Code Interactions",
+  SLACK: "Slack",
+  LINKEDIN: "LinkedIn",
+  PRODUCT_API: "Product API",
+};
+
+const INACTIVE_REO_SOURCES = new Set<ReoSourceType>([
+  "CODE_INTERACTIONS",
+  "SLACK",
+  "LINKEDIN",
+  "PRODUCT_API",
+]);
+
+const REO_ACTIVITY_LABELS: Record<string, string> = {
+  FORK: "Fork",
+  STAR: "Star",
+  COMMENT: "Comment",
+  ISSUE_CREATION: "Opened issue",
+  PULL_REQUEST: "Pull request",
+  WATCH: "Watch",
+  PAGE_VISIT: "Page visit",
+  COPY_TEXT: "Copied text",
+  COPY_PACKAGE_MANAGER: "Copied package-manager command",
+  COPY_COMMAND: "Copied command",
+  FORM_CAPTURE: "Form submitted",
+  IDENTITY: "Identified user",
+  INTERACTION_COPY_COMMAND: "Command executed",
+  INTERACTION_COPY_PACKAGE_MANAGER: "Package install executed",
+  SLACK_MESSAGE: "Message posted",
+  SLACK_REPLY: "Replied",
+  SLACK_REACTION: "Reacted",
+  SLACK_JOINED: "Joined channel",
+  LINKEDIN_MESSAGE: "Messaged",
+  LINKEDIN_REPLY: "Replied",
+  LINKEDIN_REACTION: "Reacted",
+  USAGE_METRIC: "Usage metric",
+};
+
+function humanizeActivityType(activityType: string): string {
+  return REO_ACTIVITY_LABELS[activityType] ?? activityType.replace(/_/g, " ").toLowerCase();
+}
 
 function companyLabel(count: number): string {
   return count === 1 ? "company" : "companies";
@@ -199,6 +260,47 @@ function NeverTargetField({
         </button>
       </div>
     </Field>
+  );
+}
+
+function ReoSourceGroup({
+  source,
+  weights,
+  onChangeActivityWeight,
+}: {
+  source: ReoSourceType;
+  weights: Record<string, number>;
+  onChangeActivityWeight: (activityType: string, value: number) => void;
+}) {
+  const isInactive = INACTIVE_REO_SOURCES.has(source);
+  const activityTypes = Object.keys(weights);
+
+  return (
+    <details className="group rounded-lg border border-zinc-200" open={!isInactive}>
+      <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+          {REO_SOURCE_LABELS[source]}
+          {isInactive && (
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-normal text-zinc-500">
+              Not active yet
+            </span>
+          )}
+        </span>
+        <ChevronDownIcon className="h-4 w-4 shrink-0 text-zinc-400 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="grid grid-cols-2 gap-3 border-t border-zinc-100 p-3 sm:grid-cols-3">
+        {activityTypes.map((activityType) => (
+          <NumberField
+            key={activityType}
+            label={humanizeActivityType(activityType)}
+            value={weights[activityType]}
+            min={0}
+            max={100}
+            onChange={(v) => onChangeActivityWeight(activityType, v)}
+          />
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -451,9 +553,48 @@ export function SettingsView({
       <Section title={`Signal weights (v${weightsVersion})`}>
         <div className="flex flex-col gap-5">
           <div>
-            <h3 className="mb-1 text-sm font-medium text-zinc-700">Signal type weights</h3>
+            <h3 className="mb-1 text-sm font-medium text-zinc-700">Reo signal weights</h3>
             <p className="mb-2 text-xs text-zinc-400">
-              Scale of 0–100 (100 = highest signal strength, 0 = least).
+              Grouped by source — the SAME activity means different things under different
+              sources (e.g. a docs Page visit is high-intent, a Website Page visit is generic), so
+              weight applies to the exact source + activity pair. Scale of 0–100.
+            </p>
+            <div className="flex flex-col gap-2">
+              {REO_SOURCE_ORDER.map((source) => (
+                <ReoSourceGroup
+                  key={source}
+                  source={source}
+                  weights={weights.reoActivityWeights[source] ?? {}}
+                  onChangeActivityWeight={(activityType, v) =>
+                    setWeights((prev) => ({
+                      ...prev,
+                      reoActivityWeights: {
+                        ...prev.reoActivityWeights,
+                        [source]: { ...prev.reoActivityWeights[source], [activityType]: v },
+                      },
+                    }))
+                  }
+                />
+              ))}
+            </div>
+            <div className="mt-3 max-w-[220px]">
+              <NumberField
+                label="Default (unmapped Reo signal)"
+                value={weights.reoDefaultActivityWeight}
+                min={0}
+                max={100}
+                onChange={(v) => setWeights((prev) => ({ ...prev, reoDefaultActivityWeight: v }))}
+              />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-1 text-sm font-medium text-zinc-700">
+              Other signal type weights (PostHog)
+            </h3>
+            <p className="mb-2 text-xs text-zinc-400">
+              Flat types used by PostHog signals — and any older Reo signals stored before the
+              source/activity taxonomy above existed. Scale of 0–100.
             </p>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {signalTypes.map((type) => (

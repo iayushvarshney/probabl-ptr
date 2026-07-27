@@ -28,6 +28,15 @@ function deserializeScoringWeights(raw: Record<string, unknown>): ScoringWeights
   const rawTiers = (raw.recencyDecayTiers as Array<{ maxDays: number | null; multiplier: number }>) ?? [];
   return {
     signalTypeWeights: raw.signalTypeWeights as ScoringWeights["signalTypeWeights"],
+    // Older saved rows (from before the Reo taxonomy overhaul) won't have
+    // these — fall back to the current defaults' shape rather than leaving
+    // groups/activities missing from the Settings UI.
+    reoActivityWeights:
+      (raw.reoActivityWeights as ScoringWeights["reoActivityWeights"] | undefined) ??
+      DEFAULT_SCORING_WEIGHTS.reoActivityWeights,
+    reoDefaultActivityWeight:
+      (raw.reoDefaultActivityWeight as number | undefined) ??
+      DEFAULT_SCORING_WEIGHTS.reoDefaultActivityWeight,
     recencyDecayTiers: rawTiers.map((tier) => ({
       maxDays: tier.maxDays === null || tier.maxDays === undefined ? Infinity : tier.maxDays,
       multiplier: tier.multiplier,

@@ -30,6 +30,14 @@ export type RelationshipState =
 export type IncomingSignal = {
   source: SignalSource;
   signal_type: SignalType;
+  /** Reo's real taxonomy: the (source_type, activity_type) pair, preserved
+   * verbatim from the payload — e.g. source_type "DOCUMENT" + activity_type
+   * "PAGE_VISIT". Only set for Reo signals; undefined for PostHog. This is
+   * what scoring actually keys on for Reo — signal_type stays a generic
+   * catch-all ("dev_activity") for those rows. See
+   * src/lib/scoring.config.ts's REO_ACTIVITY_WEIGHTS. */
+  source_type?: string;
+  activity_type?: string;
   origin_channel: OriginChannel;
   campaign?: string;
   raw_payload: Record<string, unknown>;

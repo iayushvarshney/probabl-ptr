@@ -24,6 +24,10 @@ export type EntityDetailSignal = {
   id: string;
   source: SignalSource;
   signalType: SignalType;
+  /** Reo's (source_type, activity_type) pair — null for PostHog signals and
+   * any pre-migration Reo rows that weren't backfilled. */
+  sourceType: string | null;
+  activityType: string | null;
   originChannel: OriginChannel;
   campaign: string | null;
   occurredAt: string;
@@ -149,10 +153,11 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     outreach_rank?: number | null;
   };
 
-  const SIGNAL_COLUMNS =
-    "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload, signal_summary";
-  const SIGNAL_COLUMNS_WITHOUT_SUMMARY =
+  const SIGNAL_BASE_COLUMNS =
     "id, source, signal_type, origin_channel, campaign, occurred_at, contact_id, raw_payload";
+  const SIGNAL_COLUMNS = `${SIGNAL_BASE_COLUMNS}, signal_summary, source_type, activity_type`;
+  const SIGNAL_COLUMNS_WITHOUT_REO_PAIR = `${SIGNAL_BASE_COLUMNS}, signal_summary`;
+  const SIGNAL_COLUMNS_WITHOUT_SUMMARY = SIGNAL_BASE_COLUMNS;
 
   let links: unknown;
   let linksError: { code?: string; message?: string } | null;
@@ -166,6 +171,16 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   }
 
   let hasSignalSummaryColumn = true;
+  let hasReoPairColumns = true;
+  if (linksError && isMissingColumnError(linksError)) {
+    hasReoPairColumns = false;
+    const fallback = await supabase
+      .from("entity_signals")
+      .select(`signals(${SIGNAL_COLUMNS_WITHOUT_REO_PAIR})`)
+      .eq("entity_id", entityId);
+    links = fallback.data;
+    linksError = fallback.error;
+  }
   if (linksError && isMissingColumnError(linksError)) {
     hasSignalSummaryColumn = false;
     const fallback = await supabase
@@ -181,6 +196,8 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
     id: string;
     source: SignalSource;
     signal_type: SignalType;
+    source_type?: string | null;
+    activity_type?: string | null;
     origin_channel: OriginChannel;
     campaign: string | null;
     occurred_at: string;
@@ -197,6 +214,8 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
       id: s.id,
       source: s.source,
       signalType: s.signal_type,
+      sourceType: hasReoPairColumns ? s.source_type ?? null : null,
+      activityType: hasReoPairColumns ? s.activity_type ?? null : null,
       originChannel: s.origin_channel,
       campaign: s.campaign,
       occurredAt: s.occurred_at,

@@ -1,3 +1,4 @@
+import { isMissingColumnError } from "@/lib/db-errors";
 import type { ScoringWeights } from "@/lib/scoring.config";
 import { buildTopReason, computeCompositeScore, type ScorableSignal } from "@/lib/scoring";
 import { getScoringWeights } from "@/lib/settings";
@@ -34,10 +35,27 @@ export async function recomputeEntityScore(entityId: string, weights?: ScoringWe
     .single();
   if (companyError) throw companyError;
 
-  const { data: links, error: linksError } = await supabase
-    .from("entity_signals")
-    .select("signals(signal_type, origin_channel, occurred_at)")
-    .eq("entity_id", entityId);
+  const SIGNAL_SCORE_COLUMNS = "signals(signal_type, source_type, activity_type, origin_channel, occurred_at)";
+  const SIGNAL_SCORE_COLUMNS_WITHOUT_REO_PAIR = "signals(signal_type, origin_channel, occurred_at)";
+
+  let links: unknown;
+  let linksError: { code?: string; message?: string } | null;
+  {
+    const first = await supabase
+      .from("entity_signals")
+      .select(SIGNAL_SCORE_COLUMNS)
+      .eq("entity_id", entityId);
+    links = first.data;
+    linksError = first.error;
+  }
+  if (linksError && isMissingColumnError(linksError)) {
+    const fallback = await supabase
+      .from("entity_signals")
+      .select(SIGNAL_SCORE_COLUMNS_WITHOUT_REO_PAIR)
+      .eq("entity_id", entityId);
+    links = fallback.data;
+    linksError = fallback.error;
+  }
   if (linksError) throw linksError;
 
   const signals: ScorableSignal[] = ((links as unknown as EntitySignalLink[] | null) ?? []).flatMap(

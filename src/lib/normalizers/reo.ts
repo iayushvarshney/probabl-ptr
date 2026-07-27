@@ -1,75 +1,36 @@
-import type { IncomingSignal, OriginChannel, SignalType } from "@/lib/types";
+import { REO_ACTIVITY_WEIGHTS, type ReoSourceType } from "@/lib/scoring.config";
+import type { IncomingSignal, OriginChannel } from "@/lib/types";
 import { asRecord, firstString } from "./shared";
 
-// Confirmed against a real Reo Activity webhook payload: PAGE_VISIT. The
-// rest are educated guesses at Reo's naming convention pending more real
-// payloads — an unmapped activity_type is never dropped, it falls through
-// to "dev_activity" and gets logged so this table can be extended.
-const ACTIVITY_TYPE_MAP: Record<string, SignalType> = {
-  GITHUB_STAR: "github_star",
-  REPO_STAR: "github_star",
-  STARRED_REPO: "github_star",
-  PACKAGE_INSTALL: "dev_activity",
-  PACKAGE_DOWNLOAD: "dev_activity",
-  NPM_INSTALL: "dev_activity",
-  PIP_INSTALL: "dev_activity",
-  DOCS_VISIT: "key_page_view",
-  WEBINAR_REGISTERED: "webinar_registered",
-  WEBINAR_ATTENDED: "webinar_attended",
-  LINKEDIN_FOLLOW: "linkedin_follow",
-};
-
-// Substrings in activity_source_url that mark a PAGE_VISIT as "key" rather
-// than generic. Hardcoded heuristic, easy to extend.
-const KEY_PAGE_URL_PATTERNS = [
-  "pricing",
-  "docs",
-  "documentation",
-  "demo",
-  "contact",
-  "signup",
-  "sign-up",
-  "get-started",
-];
-
-function isKeyPageUrl(url: string | undefined): boolean {
-  if (!url) return false;
-  const lower = url.toLowerCase();
-  return KEY_PAGE_URL_PATTERNS.some((pattern) => lower.includes(pattern));
+// Reo's real taxonomy keys on the (source_type, activity_type) PAIR, not
+// activity_type alone — the same activity_type means different things under
+// different source_types (a PAGE_VISIT under DOCUMENT is high-intent "docs
+// review"; a PAGE_VISIT under WEBSITE is a generic view). Both fields are
+// preserved verbatim from the payload rather than collapsed into a flat
+// generic signal_type. REO_ACTIVITY_WEIGHTS (scoring.config.ts) is the
+// single source of truth for which pairs are "known" — checked here only to
+// decide whether to log an "unmapped" warning; the pair is stored either
+// way and scoring falls back to a small default weight for unmapped pairs.
+function isKnownReoPair(sourceType: string, activityType: string): boolean {
+  const knownActivities = REO_ACTIVITY_WEIGHTS[sourceType as ReoSourceType];
+  return knownActivities !== undefined && knownActivities[activityType] !== undefined;
 }
 
-function mapActivityType(activityType: string, sourceUrl: string | undefined): SignalType {
-  const normalized = activityType.toUpperCase();
-
-  if (normalized === "PAGE_VISIT") {
-    return isKeyPageUrl(sourceUrl) ? "key_page_view" : "generic_page_view";
+function inferOriginChannel(sourceType: string): OriginChannel {
+  switch (sourceType) {
+    case "GITHUB":
+      return "github";
+    case "LINKEDIN":
+      return "linkedin";
+    case "WEBSITE":
+    case "DOCUMENT":
+      return "organic";
+    // SLACK/PRODUCT_JS/PRODUCT_API/CODE_INTERACTIONS don't map onto our
+    // fixed OriginChannel set (paid_ad/linkedin/organic/webinar/github) —
+    // "unknown" is the honest answer, not a guess.
+    default:
+      return "unknown";
   }
-
-  const mapped = ACTIVITY_TYPE_MAP[normalized];
-  if (mapped) return mapped;
-
-  console.warn(
-    `[reo normalizer] unmapped activity_type "${activityType}" — storing as dev_activity`
-  );
-  return "dev_activity";
-}
-
-function inferOriginChannel(sourceType: string | undefined, signalType: SignalType): OriginChannel {
-  const normalized = (sourceType ?? "").toUpperCase();
-
-  if (normalized === "WEBSITE") return "organic";
-  if (normalized === "GITHUB") return "github";
-  if (normalized === "LINKEDIN") return "linkedin";
-  if (normalized === "WEBINAR") return "webinar";
-
-  // source_type didn't say enough — fall back on what the signal itself
-  // implies. GitHub-sourced activity defaults to the github channel even
-  // when source_type is missing or unrecognized.
-  if (signalType === "github_star" || signalType === "dev_activity") return "github";
-  if (signalType === "linkedin_follow") return "linkedin";
-  if (signalType === "webinar_registered" || signalType === "webinar_attended") return "webinar";
-
-  return "unknown";
 }
 
 // Reo sends "YYYY-MM-DD HH:MM:SS" — not ISO8601, no timezone, and the
@@ -149,6 +110,12 @@ function resolvePersonIdentifier(
  * shape. Every nested field is probed defensively — a missing field
  * degrades gracefully (null, or a less-confident person_identifier) rather
  * than throwing. Returns null only when no person can be identified at all.
+ *
+ * source_type/activity_type are preserved verbatim (uppercased) rather than
+ * collapsed into a flat generic signal_type — see isKnownReoPair above.
+ * signal_type itself becomes a generic "dev_activity" catch-all for every
+ * Reo activity signal; the real classification scoring keys on lives in
+ * source_type/activity_type.
  */
 export function normalizeReoSignal(rawPayload: Record<string, unknown>): IncomingSignal | null {
   const developer = asRecord(rawPayload["developer"]);
@@ -158,12 +125,17 @@ export function normalizeReoSignal(rawPayload: Record<string, unknown>): Incomin
   const personIdentifier = resolvePersonIdentifier(developer, accountName);
   if (!personIdentifier) return null;
 
-  const activityType = firstString(rawPayload["activity_type"]) ?? "";
-  const sourceUrl = firstString(rawPayload["activity_source_url"]);
-  const signalType = mapActivityType(activityType, sourceUrl);
+  const sourceType = (firstString(rawPayload["source_type"]) ?? "UNKNOWN_SOURCE").toUpperCase();
+  const activityType = (firstString(rawPayload["activity_type"]) ?? "UNKNOWN_ACTIVITY").toUpperCase();
 
-  const sourceType = firstString(rawPayload["source_type"]);
-  const originChannel = inferOriginChannel(sourceType, signalType);
+  if (!isKnownReoPair(sourceType, activityType)) {
+    console.warn(
+      `[reo normalizer] unmapped (source_type, activity_type) pair "${sourceType}/${activityType}" ` +
+        "— storing verbatim, scored at the default weight"
+    );
+  }
+
+  const originChannel = inferOriginChannel(sourceType);
 
   const companyDomain = firstString(account["account_domain"]);
   const occurredAt = resolveOccurredAt(firstString(rawPayload["activity_date"]));
@@ -193,7 +165,9 @@ export function normalizeReoSignal(rawPayload: Record<string, unknown>): Incomin
 
   return {
     source: "reo",
-    signal_type: signalType,
+    signal_type: "dev_activity",
+    source_type: sourceType,
+    activity_type: activityType,
     origin_channel: originChannel,
     raw_payload: rawPayload,
     person_identifier: personIdentifier,

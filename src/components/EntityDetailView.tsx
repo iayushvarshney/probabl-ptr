@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Field, Section } from "@/components/ui";
 import { CheckIcon, PlusCircleIcon, SparkleIcon, TrashIcon, XIcon } from "@/components/icons";
-import { formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime, formatSignalLabel } from "@/lib/format";
 import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import type { HubSpotOwner, HubSpotTaskPriority, HubSpotTaskType } from "@/lib/hubspot";
 import {
@@ -74,7 +74,7 @@ function SignalRow({
     >
       <span className="flex items-center gap-2">
         <span className="font-medium text-zinc-800">
-          {signal.signalType.replace(/_/g, " ")}
+          {formatSignalLabel(signal.signalType, signal.sourceType, signal.activityType)}
         </span>
         <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-500">
           {signal.originChannel}
@@ -618,7 +618,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-base font-semibold text-zinc-900">
-                  {activeSignal.signalType.replace(/_/g, " ")}
+                  {formatSignalLabel(activeSignal.signalType, activeSignal.sourceType, activeSignal.activityType)}
                 </h2>
                 <p className="mt-0.5 text-xs text-zinc-400">
                   {activeSignal.originChannel} · {activeSignal.source.toUpperCase()}
