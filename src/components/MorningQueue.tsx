@@ -35,6 +35,45 @@ function initialFor(entity: QueueEntity): string {
   return name.charAt(0).toUpperCase();
 }
 
+/**
+ * Company logo, fetched client-side by domain from Clearbit's logo API —
+ * chosen over Google's favicon endpoint because Clearbit actually 404s for
+ * an unknown domain (letting onError fall back to the initial), where
+ * Google's favicon endpoint almost always returns *something* (a generic
+ * globe icon) even when there's no real logo, which would defeat the
+ * fallback. The initial-letter AvatarFallback renders immediately and
+ * unconditionally; the <img> is an absolutely-positioned overlay that
+ * paints nothing until it loads (or is removed on error), so it never
+ * blocks or delays the row — only ever "fills in" on top of the letter.
+ */
+function CompanyAvatar({ entity }: { entity: QueueEntity }) {
+  const [imgFailed, setImgFailed] = useState(false);
+  const domain = entity.companyDomain;
+  const showImg = !!domain && !imgFailed;
+
+  return (
+    <Avatar className="h-11 w-11 shrink-0">
+      <AvatarFallback className="bg-persian-blue/10 text-base font-semibold text-persian-blue">
+        {initialFor(entity)}
+      </AvatarFallback>
+      {showImg && (
+        // Intentionally a plain <img>, not next/image: it must fetch
+        // client-side, lazily and in parallel, without going through
+        // Next's image optimizer/proxy or any server round-trip.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={`https://logo.clearbit.com/${domain}`}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onError={() => setImgFailed(true)}
+          className="absolute inset-0 h-full w-full rounded-full bg-white object-cover"
+        />
+      )}
+    </Avatar>
+  );
+}
+
 export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ALL");
   const [search, setSearch] = useState("");
@@ -135,11 +174,7 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
           {filtered.map((entity) => (
             <Link key={entity.id} href={`/entities/${entity.id}`} className="block">
               <Card className="flex-row items-start gap-4 rounded-2xl border border-zinc-200 p-4 shadow-none ring-0 transition-colors hover:border-persian-blue/30 hover:bg-persian-blue/[0.02] sm:items-center">
-                <Avatar className="h-11 w-11 shrink-0">
-                  <AvatarFallback className="bg-persian-blue/10 text-base font-semibold text-persian-blue">
-                    {initialFor(entity)}
-                  </AvatarFallback>
-                </Avatar>
+                <CompanyAvatar entity={entity} />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
