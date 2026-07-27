@@ -3,7 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { QueueIcon, SettingsIcon } from "@/components/icons";
+import { logout } from "@/lib/auth-actions";
+import { PowerIcon, QueueIcon, SettingsIcon } from "@/components/icons";
 
 const NAV_ITEMS = [
   { href: "/", label: "Morning Queue", icon: QueueIcon },
@@ -39,6 +40,16 @@ export function NavBar() {
             </Link>
           );
         })}
+        <form action={logout}>
+          <button
+            type="submit"
+            title="Log out"
+            aria-label="Log out"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600"
+          >
+            <PowerIcon className="h-4 w-4" />
+          </button>
+        </form>
       </div>
     </nav>
   );
