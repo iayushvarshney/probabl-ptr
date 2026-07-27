@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { SearchIcon } from "@/components/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -35,38 +35,76 @@ function initialFor(entity: QueueEntity): string {
   return name.charAt(0).toUpperCase();
 }
 
+// Logo providers to try, in order, before giving up to the initial letter.
+// Clearbit looks best when it loads, but it's on common ad-blocker/
+// tracking-protection blocklists (it's flagged as a company-enrichment/
+// tracking domain) — when a browser or extension silently blocks it, the
+// <img>'s error event frequently never fires at all, leaving it stuck
+// showing the browser's native broken-image glyph forever instead of
+// falling back. So onError alone isn't enough: a watchdog timeout in
+// CompanyAvatar below also advances the cascade if a stage hasn't
+// definitively loaded (or errored) within LOGO_STAGE_TIMEOUT_MS.
+const LOGO_STAGE_TIMEOUT_MS = 2000;
+
+function logoUrlFor(stage: "clearbit" | "favicon", domain: string): string {
+  return stage === "clearbit"
+    ? `https://logo.clearbit.com/${domain}`
+    : `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
+}
+
 /**
- * Company logo, fetched client-side by domain from Clearbit's logo API —
- * chosen over Google's favicon endpoint because Clearbit actually 404s for
- * an unknown domain (letting onError fall back to the initial), where
- * Google's favicon endpoint almost always returns *something* (a generic
- * globe icon) even when there's no real logo, which would defeat the
- * fallback. The initial-letter AvatarFallback renders immediately and
- * unconditionally; the <img> is an absolutely-positioned overlay that
- * paints nothing until it loads (or is removed on error), so it never
- * blocks or delays the row — only ever "fills in" on top of the letter.
+ * Company logo, fetched client-side by domain — Clearbit first (real brand
+ * logos), Google's favicon endpoint second, the initial-letter
+ * AvatarFallback last. The fallback renders immediately and unconditionally
+ * underneath; the <img> is an absolutely-positioned overlay that paints
+ * nothing until it loads, so it never blocks or delays the row — only ever
+ * "fills in" on top of the letter, and only ever replaces it once a real
+ * image has actually loaded.
  */
 function CompanyAvatar({ entity }: { entity: QueueEntity }) {
-  const [imgFailed, setImgFailed] = useState(false);
   const domain = entity.companyDomain;
-  const showImg = !!domain && !imgFailed;
+  const [stage, setStage] = useState<"clearbit" | "favicon" | "letter">(
+    domain ? "clearbit" : "letter"
+  );
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function clearWatchdog() {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  }
+
+  function advance() {
+    clearWatchdog();
+    setStage((s) => (s === "clearbit" ? "favicon" : "letter"));
+  }
+
+  useEffect(() => {
+    if (stage === "letter") return;
+    timeoutRef.current = setTimeout(advance, LOGO_STAGE_TIMEOUT_MS);
+    return clearWatchdog;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- advance/clearWatchdog are stable per render and don't need to be deps
+  }, [stage]);
 
   return (
     <Avatar className="h-11 w-11 shrink-0">
       <AvatarFallback className="bg-persian-blue/10 text-base font-semibold text-persian-blue">
         {initialFor(entity)}
       </AvatarFallback>
-      {showImg && (
+      {domain && stage !== "letter" && (
         // Intentionally a plain <img>, not next/image: it must fetch
         // client-side, lazily and in parallel, without going through
-        // Next's image optimizer/proxy or any server round-trip.
+        // Next's image optimizer/proxy or any server round-trip. `key`
+        // forces a clean remount when the stage (and so the src) changes,
+        // rather than reusing an <img> element that's already in an
+        // errored/stuck state.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={`https://logo.clearbit.com/${domain}`}
+          key={stage}
+          src={logoUrlFor(stage, domain)}
           alt=""
           loading="lazy"
           decoding="async"
-          onError={() => setImgFailed(true)}
+          onLoad={clearWatchdog}
+          onError={advance}
           className="absolute inset-0 h-full w-full rounded-full bg-white object-cover"
         />
       )}
