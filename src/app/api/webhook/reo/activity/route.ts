@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     // Empty/non-JSON body — most likely a connectivity test ping rather
     // than a real Activity. Authentication already succeeded, so
     // acknowledge receipt instead of erroring.
-    console.warn("[reo webhook] empty or non-JSON body — treating as a connectivity check");
+    console.warn("[reo activity webhook] empty or non-JSON body — treating as a connectivity check");
     return NextResponse.json({ ok: true, received: true, stored: false });
   }
 
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     // rather than a real Activity. Acknowledge receipt (2xx) so webhook
     // "test connection" UIs don't read this as broken; still logged for
     // visibility into genuinely malformed real payloads.
-    console.warn("[reo webhook] authenticated request had no identifiable person — not stored", rawPayload);
+    console.warn("[reo activity webhook] authenticated request had no identifiable person — not stored", rawPayload);
     return NextResponse.json({ ok: true, received: true, stored: false });
   }
 

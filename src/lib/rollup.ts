@@ -29,6 +29,7 @@ type CompanyRow = {
   country?: string | null;
   hubspot_lifecycle_stage?: string | null;
   is_customer?: boolean;
+  developer_funnel?: string | null;
 };
 
 // Reo enrichment + HubSpot lifecycle-stage columns (see supabase-schema.sql)
@@ -46,6 +47,7 @@ const ENRICHMENT_COLUMNS = [
   "country",
   "hubspot_lifecycle_stage",
   "is_customer",
+  "developer_funnel",
 ] as const;
 
 function withoutEnrichmentColumns<T extends Record<string, unknown>>(row: T): T {
@@ -80,7 +82,40 @@ type ContactRow = {
   full_name: string | null;
   company_id: string | null;
   hubspot_contact_id: string | null;
+  linkedin_url?: string | null;
+  title?: string | null;
+  last_developer_payload?: Record<string, unknown> | null;
 };
+
+// Reo Developer-webhook enrichment columns (see supabase-schema.sql) — same
+// missing-column-safe pattern as the companies enrichment above.
+const CONTACT_ENRICHMENT_COLUMNS = ["title", "last_developer_payload"] as const;
+
+function withoutContactEnrichmentColumns<T extends Record<string, unknown>>(row: T): T {
+  const copy = { ...row };
+  for (const key of CONTACT_ENRICHMENT_COLUMNS) delete (copy as Record<string, unknown>)[key];
+  return copy;
+}
+
+async function writeContactRow(
+  write: (
+    row: Record<string, unknown>
+  ) => PromiseLike<{ data: ContactRow | null; error: unknown }>,
+  row: Record<string, unknown>
+): Promise<ContactRow> {
+  let { data, error } = await write(row);
+
+  if (error && isMissingColumnError(error)) {
+    console.warn(
+      "[rollup] contacts table is missing the Reo developer-enrichment columns — run the migration " +
+        "at the bottom of supabase-schema.sql. Persisting this contact without them for now."
+    );
+    ({ data, error } = await write(withoutContactEnrichmentColumns(row)));
+  }
+
+  if (error) throw error;
+  return data as ContactRow;
+}
 
 type EntityRow = {
   id: string;
@@ -90,7 +125,7 @@ type EntityRow = {
   last_signal_at: string | null;
 };
 
-async function upsertCompany(params: {
+export async function upsertCompany(params: {
   domain?: string;
   name?: string;
   /** When set, reuse this exact company row instead of looking one up by
@@ -116,6 +151,9 @@ async function upsertCompany(params: {
    * signal — persisted so the Morning Queue can tag/filter by it (e.g.
    * "Customer") without a live HubSpot call per entity. */
   hubspotLifecycleStage?: string;
+  /** Reo's account.developer_funnel, from the Developer webhook — persisted
+   * only, not yet wired into scoring or ICP. */
+  developerFunnel?: string;
 }): Promise<CompanyRow> {
   let existing: CompanyRow | null = null;
 
@@ -193,6 +231,7 @@ async function upsertCompany(params: {
     country: mergedCountry,
     hubspot_lifecycle_stage: mergedHubspotLifecycleStage,
     is_customer: isCustomer,
+    developer_funnel: params.developerFunnel ?? existing?.developer_funnel ?? null,
   };
 
   if (existing) {
@@ -212,11 +251,20 @@ async function upsertCompany(params: {
   return writeCompanyRow((row) => supabase.from("companies").insert(row).select().single(), merged);
 }
 
-async function upsertContact(params: {
+export async function upsertContact(params: {
   email?: string;
   fullName?: string;
   companyId: string;
   hubspotContactId?: string;
+  linkedinUrl?: string;
+  /** Reo's developer_designation, from the Developer webhook — a job title
+   * (e.g. "Software Engineer", "ML Ops Lead") kept for buying-committee /
+   * outreach-targeting reasoning later. */
+  title?: string;
+  /** The full raw Developer-webhook payload, verbatim, in case we want
+   * fields from it later — not a scored signal, so it lives here rather
+   * than in the signals table. */
+  rawDeveloperPayload?: Record<string, unknown>;
 }): Promise<ContactRow> {
   if (params.email) {
     const { data: existing } = await supabase
@@ -230,15 +278,15 @@ async function upsertContact(params: {
       full_name: params.fullName ?? existing?.full_name ?? null,
       company_id: params.companyId,
       hubspot_contact_id: params.hubspotContactId ?? existing?.hubspot_contact_id ?? null,
+      linkedin_url: params.linkedinUrl ?? existing?.linkedin_url ?? null,
+      title: params.title ?? existing?.title ?? null,
+      last_developer_payload: params.rawDeveloperPayload ?? existing?.last_developer_payload ?? null,
     };
 
-    const { data, error } = await supabase
-      .from("contacts")
-      .upsert(merged, { onConflict: "email" })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    return writeContactRow(
+      (row) => supabase.from("contacts").upsert(row, { onConflict: "email" }).select().single(),
+      merged
+    );
   }
 
   // No email — best-effort match by name within the same company. Never
@@ -257,30 +305,30 @@ async function upsertContact(params: {
   }
 
   if (existing) {
-    const { data, error } = await supabase
-      .from("contacts")
-      .update({
-        hubspot_contact_id: params.hubspotContactId ?? existing.hubspot_contact_id ?? null,
-      })
-      .eq("id", existing.id)
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
+    const merged = {
+      hubspot_contact_id: params.hubspotContactId ?? existing.hubspot_contact_id ?? null,
+      linkedin_url: params.linkedinUrl ?? existing.linkedin_url ?? null,
+      title: params.title ?? existing.title ?? null,
+      last_developer_payload: params.rawDeveloperPayload ?? existing.last_developer_payload ?? null,
+    };
+    return writeContactRow(
+      (row) => supabase.from("contacts").update(row).eq("id", existing!.id).select().single(),
+      merged
+    );
   }
 
-  const { data, error } = await supabase
-    .from("contacts")
-    .insert({
+  return writeContactRow(
+    (row) => supabase.from("contacts").insert(row).select().single(),
+    {
       email: null,
       full_name: params.fullName ?? null,
       company_id: params.companyId,
       hubspot_contact_id: params.hubspotContactId ?? null,
-    })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+      linkedin_url: params.linkedinUrl ?? null,
+      title: params.title ?? null,
+      last_developer_payload: params.rawDeveloperPayload ?? null,
+    }
+  );
 }
 
 async function upsertEntity(params: {

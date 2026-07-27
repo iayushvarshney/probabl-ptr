@@ -83,7 +83,8 @@ Once deployed, the webhook endpoints are:
 
 ```
 https://<your-deployment-domain>/api/webhook/posthog
-https://<your-deployment-domain>/api/webhook/reo
+https://<your-deployment-domain>/api/webhook/reo/activity
+https://<your-deployment-domain>/api/webhook/reo/developer
 ```
 
 **PostHog** (self-serve):
@@ -97,11 +98,16 @@ https://<your-deployment-domain>/api/webhook/reo
 
 **Reo.dev** (needs Customer Success to enable first):
 1. Ask Reo Customer Success to enable webhooks for your account.
-2. Once enabled, as Admin: **Settings → Integrations → Webhooks**, add a
-   webhook pointed at `/api/webhook/reo` above, with payload type
-   **Activities**.
+2. Once enabled, as Admin: **Settings → Integrations → Webhooks**, add two
+   webhooks:
+   - pointed at `/api/webhook/reo/activity` above, with payload type
+     **Activities** — these are scored and show up in the morning queue.
+   - pointed at `/api/webhook/reo/developer` above, with payload type
+     **Developer** (developer-added-to-segment membership events) — these
+     are quietly upserted into companies/contacts as background enrichment
+     and never appear in the queue.
 3. Add the shared secret the same way as PostHog (header, query param, or
-   Bearer token — see `src/lib/webhook-auth.ts`).
+   Bearer token — see `src/lib/webhook-auth.ts`) to both.
 
 Webhook routes are exempt from the app's password gate (they authenticate
 via their own shared secret, checked in `src/lib/webhook-auth.ts`) — see

@@ -193,3 +193,17 @@ alter table companies add column if not exists about_blurb text;
 -- ─────────────────────────────────────────────────────────────
 alter table companies add column if not exists hubspot_lifecycle_stage text;
 alter table companies add column if not exists is_customer boolean not null default false;
+
+-- ─────────────────────────────────────────────────────────────
+-- Reo.dev "Developer" webhook (/api/webhook/reo/developer): a developer-
+-- added-to-segment MEMBERSHIP event, not a scored activity — it quietly
+-- upserts companies/contacts (see src/lib/rollup.ts) so future Activity
+-- signals from that person resolve pre-enriched, without ever creating an
+-- entity/queue row. developer_funnel is account-level (companies);
+-- title (developer_designation) and last_developer_payload (the full raw
+-- payload, verbatim, in case we want fields from it later) are per-contact.
+-- Safe to re-run.
+-- ─────────────────────────────────────────────────────────────
+alter table companies add column if not exists developer_funnel text;
+alter table contacts add column if not exists title text;
+alter table contacts add column if not exists last_developer_payload jsonb;
