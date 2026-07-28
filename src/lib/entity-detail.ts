@@ -1,5 +1,6 @@
 import { isMissingColumnError } from "@/lib/db-errors";
 import { findOpenDealStage, getCompanyDetails, getCompanyOwnerId } from "@/lib/hubspot";
+import { timed } from "@/lib/perf";
 import { supabase } from "@/lib/supabase";
 import type {
   OriginChannel,
@@ -104,41 +105,43 @@ function asList<T>(value: T | T[] | null): T[] {
 }
 
 export async function getEntityDetail(entityId: string): Promise<EntityDetail | null> {
-  const { data: entity, error: entityError } = await supabase
-    .from("entities")
-    .select("*")
-    .eq("id", entityId)
-    .maybeSingle();
+  const { data: entity, error: entityError } = await timed(
+    `entity:${entityId}:supabase:entities`,
+    () => supabase.from("entities").select("*").eq("id", entityId).maybeSingle()
+  );
   if (entityError) throw entityError;
   if (!entity) return null;
 
-  const { data: company, error: companyError } = await supabase
-    .from("companies")
-    .select("*")
-    .eq("id", entity.company_id)
-    .single();
+  const { data: company, error: companyError } = await timed(
+    `entity:${entityId}:supabase:companies`,
+    () => supabase.from("companies").select("*").eq("id", entity.company_id).single()
+  );
   if (companyError) throw companyError;
 
   const CONTACT_COLUMNS = "*, outreach_reason, outreach_rank";
   let contactRows: unknown;
   let contactsError: { code?: string; message?: string } | null;
   {
-    const first = await supabase
-      .from("contacts")
-      .select(CONTACT_COLUMNS)
-      .eq("company_id", entity.company_id)
-      .order("updated_at", { ascending: false });
+    const first = await timed(`entity:${entityId}:supabase:contacts`, () =>
+      supabase
+        .from("contacts")
+        .select(CONTACT_COLUMNS)
+        .eq("company_id", entity.company_id)
+        .order("updated_at", { ascending: false })
+    );
     contactRows = first.data;
     contactsError = first.error;
   }
   let hasOutreachColumns = true;
   if (contactsError && isMissingColumnError(contactsError)) {
     hasOutreachColumns = false;
-    const fallback = await supabase
-      .from("contacts")
-      .select("*")
-      .eq("company_id", entity.company_id)
-      .order("updated_at", { ascending: false });
+    const fallback = await timed(`entity:${entityId}:supabase:contacts:fallback`, () =>
+      supabase
+        .from("contacts")
+        .select("*")
+        .eq("company_id", entity.company_id)
+        .order("updated_at", { ascending: false })
+    );
     contactRows = fallback.data;
     contactsError = fallback.error;
   }
@@ -162,10 +165,9 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   let links: unknown;
   let linksError: { code?: string; message?: string } | null;
   {
-    const first = await supabase
-      .from("entity_signals")
-      .select(`signals(${SIGNAL_COLUMNS})`)
-      .eq("entity_id", entityId);
+    const first = await timed(`entity:${entityId}:supabase:signals`, () =>
+      supabase.from("entity_signals").select(`signals(${SIGNAL_COLUMNS})`).eq("entity_id", entityId)
+    );
     links = first.data;
     linksError = first.error;
   }
@@ -174,19 +176,23 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   let hasReoPairColumns = true;
   if (linksError && isMissingColumnError(linksError)) {
     hasReoPairColumns = false;
-    const fallback = await supabase
-      .from("entity_signals")
-      .select(`signals(${SIGNAL_COLUMNS_WITHOUT_REO_PAIR})`)
-      .eq("entity_id", entityId);
+    const fallback = await timed(`entity:${entityId}:supabase:signals:fallback1`, () =>
+      supabase
+        .from("entity_signals")
+        .select(`signals(${SIGNAL_COLUMNS_WITHOUT_REO_PAIR})`)
+        .eq("entity_id", entityId)
+    );
     links = fallback.data;
     linksError = fallback.error;
   }
   if (linksError && isMissingColumnError(linksError)) {
     hasSignalSummaryColumn = false;
-    const fallback = await supabase
-      .from("entity_signals")
-      .select(`signals(${SIGNAL_COLUMNS_WITHOUT_SUMMARY})`)
-      .eq("entity_id", entityId);
+    const fallback = await timed(`entity:${entityId}:supabase:signals:fallback2`, () =>
+      supabase
+        .from("entity_signals")
+        .select(`signals(${SIGNAL_COLUMNS_WITHOUT_SUMMARY})`)
+        .eq("entity_id", entityId)
+    );
     links = fallback.data;
     linksError = fallback.error;
   }
@@ -238,22 +244,26 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   let pushRows: unknown;
   let pushesError: { code?: string; message?: string } | null;
   {
-    const first = await supabase
-      .from("pushes")
-      .select(PUSH_COLUMNS)
-      .eq("entity_id", entityId)
-      .order("pushed_at", { ascending: false });
+    const first = await timed(`entity:${entityId}:supabase:pushes`, () =>
+      supabase
+        .from("pushes")
+        .select(PUSH_COLUMNS)
+        .eq("entity_id", entityId)
+        .order("pushed_at", { ascending: false })
+    );
     pushRows = first.data;
     pushesError = first.error;
   }
   let hasPushContactColumn = true;
   if (pushesError && isMissingColumnError(pushesError)) {
     hasPushContactColumn = false;
-    const fallback = await supabase
-      .from("pushes")
-      .select("*")
-      .eq("entity_id", entityId)
-      .order("pushed_at", { ascending: false });
+    const fallback = await timed(`entity:${entityId}:supabase:pushes:fallback`, () =>
+      supabase
+        .from("pushes")
+        .select("*")
+        .eq("entity_id", entityId)
+        .order("pushed_at", { ascending: false })
+    );
     pushRows = fallback.data;
     pushesError = fallback.error;
   }
@@ -286,11 +296,21 @@ export async function getEntityDetail(entityId: string): Promise<EntityDetail | 
   let website: string | null = null;
   let dealStage: string | null = null;
   if (company.hubspot_company_id) {
-    const [ownerResult, detailsResult, dealStageResult] = await Promise.allSettled([
-      getCompanyOwnerId(company.hubspot_company_id),
-      getCompanyDetails(company.hubspot_company_id),
-      findOpenDealStage(company.hubspot_company_id),
-    ]);
+    const [ownerResult, detailsResult, dealStageResult] = await timed(
+      `entity:${entityId}:hubspot:all (parallel)`,
+      () =>
+        Promise.allSettled([
+          timed(`entity:${entityId}:hubspot:getCompanyOwnerId`, () =>
+            getCompanyOwnerId(company.hubspot_company_id)
+          ),
+          timed(`entity:${entityId}:hubspot:getCompanyDetails`, () =>
+            getCompanyDetails(company.hubspot_company_id)
+          ),
+          timed(`entity:${entityId}:hubspot:findOpenDealStage`, () =>
+            findOpenDealStage(company.hubspot_company_id)
+          ),
+        ])
+    );
     if (ownerResult.status === "fulfilled") {
       defaultOwnerId = ownerResult.value;
     } else {

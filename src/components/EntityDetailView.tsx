@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Field, Section } from "@/components/ui";
-import { CheckIcon, PlusCircleIcon, SparkleIcon, TrashIcon, XIcon } from "@/components/icons";
+import { CheckIcon, PlusCircleIcon, RefreshIcon, SparkleIcon, TrashIcon, XIcon } from "@/components/icons";
 import { formatRelativeTime, formatSignalLabel } from "@/lib/format";
 import type { EntityDetail, EntityDetailContact } from "@/lib/entity-detail";
 import type { HubSpotOwner, HubSpotTaskPriority, HubSpotTaskType } from "@/lib/hubspot";
@@ -121,6 +121,72 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   const [isPushing, setIsPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
   const [pushedTaskUrl, setPushedTaskUrl] = useState<string | null>(null);
+
+  const [isRegeneratingSummary, setIsRegeneratingSummary] = useState(false);
+  const [regenerateSummaryError, setRegenerateSummaryError] = useState<string | null>(null);
+
+  const [isRegeneratingBlurb, setIsRegeneratingBlurb] = useState(false);
+  const [regenerateBlurbError, setRegenerateBlurbError] = useState<string | null>(null);
+
+  // "Who to reach out to" (buying-committee suggestions) is fully on-demand
+  // — never generated just from opening the page, so this is the only
+  // trigger for that Claude call (and anything it might call in the
+  // future, e.g. Surfe).
+  const [isLoadingRecommendations, setIsLoadingRecommendations] = useState(false);
+  const [recommendationsError, setRecommendationsError] = useState<string | null>(null);
+
+  async function handleRegenerateSummary() {
+    setIsRegeneratingSummary(true);
+    setRegenerateSummaryError(null);
+    try {
+      const res = await fetch(`/api/entities/${detail.id}/regenerate-summary`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to regenerate summary");
+      setDetail((prev) => ({ ...prev, claudeSummary: json.summary }));
+    } catch (err) {
+      setRegenerateSummaryError(err instanceof Error ? err.message : "Failed to regenerate summary");
+    } finally {
+      setIsRegeneratingSummary(false);
+    }
+  }
+
+  async function handleRegenerateBlurb() {
+    setIsRegeneratingBlurb(true);
+    setRegenerateBlurbError(null);
+    try {
+      const res = await fetch(`/api/entities/${detail.id}/regenerate-blurb`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to regenerate blurb");
+      setDetail((prev) => ({ ...prev, company: { ...prev.company, aboutBlurb: json.blurb } }));
+    } catch (err) {
+      setRegenerateBlurbError(err instanceof Error ? err.message : "Failed to regenerate blurb");
+    } finally {
+      setIsRegeneratingBlurb(false);
+    }
+  }
+
+  async function handleGenerateContactRecommendations() {
+    setIsLoadingRecommendations(true);
+    setRecommendationsError(null);
+    try {
+      const res = await fetch(`/api/entities/${detail.id}/contact-recommendations`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Failed to generate recommendations");
+      const recommendations = json.recommendations as Record<string, { reason: string; rank: number }>;
+      setDetail((prev) => ({
+        ...prev,
+        contacts: prev.contacts.map((c) =>
+          recommendations[c.id]
+            ? { ...c, outreachReason: recommendations[c.id].reason, outreachRank: recommendations[c.id].rank }
+            : c
+        ),
+      }));
+    } catch (err) {
+      setRecommendationsError(err instanceof Error ? err.message : "Failed to generate recommendations");
+    } finally {
+      setIsLoadingRecommendations(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -280,6 +346,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
   }
 
   const sortedContacts = sortByOutreachRank(detail.contacts);
+  const hasAnyRecommendation = detail.contacts.some((c) => c.outreachReason != null);
 
   return (
     <div className="flex flex-col gap-6">
@@ -335,9 +402,31 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Section title="HubSpot context">
           <div className="flex flex-col gap-3">
-            {detail.company.aboutBlurb && (
-              <p className="text-sm text-zinc-600">{detail.company.aboutBlurb}</p>
+            {detail.company.aboutBlurb ? (
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm text-zinc-600">{detail.company.aboutBlurb}</p>
+                <button
+                  type="button"
+                  onClick={handleRegenerateBlurb}
+                  disabled={isRegeneratingBlurb}
+                  title="Regenerate"
+                  className="shrink-0 text-zinc-300 hover:text-persian-blue disabled:opacity-50"
+                >
+                  <RefreshIcon className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRegenerateBlurb}
+                disabled={isRegeneratingBlurb}
+                className="flex items-center gap-1 self-start text-xs font-medium text-persian-blue hover:underline disabled:opacity-50"
+              >
+                <RefreshIcon className="h-3 w-3" />
+                {isRegeneratingBlurb ? "Generating…" : "Generate company blurb"}
+              </button>
             )}
+            {regenerateBlurbError && <p className="text-xs text-red-600">{regenerateBlurbError}</p>}
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
               <dt className="text-zinc-400">Company</dt>
               <dd className="text-zinc-700">
@@ -418,12 +507,26 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
           </div>
         </Section>
 
-        <Section title="Claude summary">
+        <Section
+          title="Claude summary"
+          actions={
+            <button
+              type="button"
+              onClick={handleRegenerateSummary}
+              disabled={isRegeneratingSummary}
+              className="flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-persian-blue disabled:opacity-50"
+            >
+              <RefreshIcon className="h-3 w-3" />
+              {isRegeneratingSummary ? "Regenerating…" : "Regenerate"}
+            </button>
+          }
+        >
           {detail.claudeSummary ? (
             <p className="text-sm text-zinc-700">{detail.claudeSummary}</p>
           ) : (
             <p className="text-sm text-zinc-400">No summary yet.</p>
           )}
+          {regenerateSummaryError && <p className="mt-2 text-xs text-red-600">{regenerateSummaryError}</p>}
         </Section>
       </div>
 
@@ -445,9 +548,40 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       </Section>
 
       {detail.status !== "dismissed" && (
-        <Section title="Who to reach out to">
+        <Section
+          title="Who to reach out to"
+          actions={
+            hasAnyRecommendation && (
+              <button
+                type="button"
+                onClick={handleGenerateContactRecommendations}
+                disabled={isLoadingRecommendations}
+                className="flex items-center gap-1 text-xs font-medium text-zinc-400 hover:text-persian-blue disabled:opacity-50"
+              >
+                <RefreshIcon className="h-3 w-3" />
+                {isLoadingRecommendations ? "Regenerating…" : "Regenerate"}
+              </button>
+            )
+          }
+        >
           {sortedContacts.length === 0 ? (
             <p className="text-sm text-zinc-400">No known contacts yet.</p>
+          ) : !hasAnyRecommendation ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-sm text-zinc-400">
+                No suggestions yet — generating calls Claude, so it only runs when you ask.
+              </p>
+              <button
+                type="button"
+                onClick={handleGenerateContactRecommendations}
+                disabled={isLoadingRecommendations}
+                className="flex items-center gap-1.5 rounded-full bg-persian-blue/10 px-3.5 py-1.5 text-sm font-medium text-persian-blue hover:bg-persian-blue/15 disabled:opacity-50"
+              >
+                <SparkleIcon className="h-3.5 w-3.5" />
+                {isLoadingRecommendations ? "Thinking…" : "Suggest who to contact"}
+              </button>
+              {recommendationsError && <p className="text-sm text-red-600">{recommendationsError}</p>}
+            </div>
           ) : (
             <div className="flex flex-col divide-y divide-zinc-100">
               {sortedContacts.map((contact) => {

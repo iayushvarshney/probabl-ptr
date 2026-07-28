@@ -470,6 +470,28 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
       { onConflict: "entity_id,signal_id", ignoreDuplicates: true }
     );
 
+  // A new signal just rolled up onto this entity — its cached Claude
+  // summary (and the company's "about" blurb) no longer reflect the fresh
+  // activity, so clear them; the entity detail page regenerates both,
+  // once, the next time it's opened (see src/app/entities/[id]/page.tsx).
+  // Never regenerated eagerly here — that would put a live Claude call on
+  // the ingestion/webhook path. Missing-column-safe: a DB that hasn't run
+  // the about_blurb/claude_summary migrations yet just skips this no-op.
+  const { error: invalidateEntityError } = await supabase
+    .from("entities")
+    .update({ claude_summary: null })
+    .eq("id", entity.id);
+  if (invalidateEntityError && !isMissingColumnError(invalidateEntityError)) {
+    console.error("Failed to invalidate claude_summary for entity", entity.id, invalidateEntityError);
+  }
+  const { error: invalidateCompanyError } = await supabase
+    .from("companies")
+    .update({ about_blurb: null })
+    .eq("id", company.id);
+  if (invalidateCompanyError && !isMissingColumnError(invalidateCompanyError)) {
+    console.error("Failed to invalidate about_blurb for company", company.id, invalidateCompanyError);
+  }
+
   await supabase
     .from("signals")
     .update({

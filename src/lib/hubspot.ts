@@ -1,6 +1,8 @@
 // Thin HubSpot REST wrapper. Private App token auth (NOT OAuth), against
 // /crm/v3/... and /crm/v4/... .
 
+import { timed } from "@/lib/perf";
+
 const HUBSPOT_API_BASE = "https://api.hubapi.com";
 
 export const USE_MOCK_HUBSPOT = process.env.USE_MOCK_HUBSPOT === "true";
@@ -17,21 +19,23 @@ async function hubspotRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${HUBSPOT_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
+  return timed(`hubspot:http:${init.method ?? "GET"} ${path}`, async () => {
+    const res = await fetch(`${HUBSPOT_API_BASE}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...init.headers,
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`HubSpot API error ${res.status} on ${path}: ${body}`);
+    }
+
+    return res.json() as Promise<T>;
   });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`HubSpot API error ${res.status} on ${path}: ${body}`);
-  }
-
-  return res.json() as Promise<T>;
 }
 
 // --- Types --------------------------------------------------------------
