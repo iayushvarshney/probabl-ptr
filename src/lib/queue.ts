@@ -21,6 +21,9 @@ export type QueueEntity = {
   /** True when HubSpot's lifecycle stage is "customer" — false if the
    * company isn't in HubSpot or hasn't been resolved there yet. */
   isCustomer: boolean;
+  /** Company's country, from HubSpot or Reo firmographic enrichment — null
+   * when unresolved. Powers the morning queue's geography filter. */
+  companyCountry: string | null;
 };
 
 type CompanyFields = {
@@ -30,6 +33,7 @@ type CompanyFields = {
   has_open_opp: boolean;
   matches_icp: boolean;
   is_customer?: boolean;
+  country: string | null;
 };
 
 // supabase-js's untyped generic client infers embedded to-one relations as
@@ -61,9 +65,9 @@ function asList<T>(value: T | T[] | null): T[] {
 }
 
 const ENTITY_COLUMNS =
-  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, is_customer)";
+  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, is_customer, country)";
 const ENTITY_COLUMNS_WITHOUT_IS_CUSTOMER =
-  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp)";
+  "id, company_id, relationship_state, composite_score, top_reason, last_signal_at, companies(name, domain, is_target_account, has_open_opp, matches_icp, country)";
 
 /** Ranked, pending entities for the morning queue — highest score first. */
 export async function getQueueEntities(): Promise<QueueEntity[]> {
@@ -144,6 +148,7 @@ export async function getQueueEntities(): Promise<QueueEntity[]> {
       originChannels: [...(channelsByEntity.get(row.id) ?? [])].sort(),
       contactEmail: contactEmailByCompany.get(row.company_id) ?? null,
       isCustomer: company?.is_customer ?? false,
+      companyCountry: company?.country ?? null,
     };
   });
 }

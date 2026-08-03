@@ -112,9 +112,20 @@ function CompanyAvatar({ entity }: { entity: QueueEntity }) {
   );
 }
 
+const ALL_COUNTRIES = "ALL";
+
 export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ALL");
+  const [countryFilter, setCountryFilter] = useState(ALL_COUNTRIES);
   const [search, setSearch] = useState("");
+
+  const countries = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entities) {
+      if (e.companyCountry) set.add(e.companyCountry);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [entities]);
 
   const counts = useMemo(() => {
     const byState: Record<RelationshipState, number> = {
@@ -151,13 +162,14 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       } else if (stateFilter !== "ALL") {
         if (hasNoCompany(e) || isCustomer(e) || e.relationshipState !== stateFilter) return false;
       }
+      if (countryFilter !== ALL_COUNTRIES && e.companyCountry !== countryFilter) return false;
       if (query) {
         const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""} ${e.contactEmail ?? ""}`.toLowerCase();
         if (!haystack.includes(query)) return false;
       }
       return true;
     });
-  }, [entities, stateFilter, search]);
+  }, [entities, stateFilter, countryFilter, search]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -190,14 +202,31 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
           )}
         </div>
 
-        <div className="relative w-56">
-          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search companies…"
-            className="h-9 rounded-full border-zinc-200 pl-9 focus-visible:border-persian-blue focus-visible:ring-persian-blue/20"
-          />
+        <div className="flex items-center gap-2">
+          {countries.length > 0 && (
+            <select
+              value={countryFilter}
+              onChange={(e) => setCountryFilter(e.target.value)}
+              className="h-9 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-medium text-zinc-600 outline-none focus-visible:border-persian-blue focus-visible:ring-2 focus-visible:ring-persian-blue/20"
+            >
+              <option value={ALL_COUNTRIES}>All countries</option>
+              {countries.map((country) => (
+                <option key={country} value={country}>
+                  {country}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <div className="relative w-56">
+            <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search companies…"
+              className="h-9 rounded-full border-zinc-200 pl-9 focus-visible:border-persian-blue focus-visible:ring-persian-blue/20"
+            />
+          </div>
         </div>
       </div>
 
