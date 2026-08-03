@@ -436,7 +436,7 @@ export async function rollupSignal(signal: IncomingSignal, signalId: string) {
     industry: signal.company_enrichment?.industry,
     employeeCountRange: signal.company_enrichment?.employeeCountRange,
     preferredTechnology: signal.company_enrichment?.preferredTechnology,
-    country: signal.company_enrichment?.country,
+    country: hubspotCompany?.country || signal.company_enrichment?.country,
   });
 
   const contact = await upsertContact({

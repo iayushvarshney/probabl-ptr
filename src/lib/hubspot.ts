@@ -60,6 +60,10 @@ export type HubSpotCompany = {
   /** HubSpot's own `website` property, when set (may include protocol/path,
    * unlike `domain`) — falls back to constructing one from domain if null. */
   website: string | null;
+  /** HubSpot's standard `country` company property — self-reported CRM
+   * data, so it wins over Reo's account-enrichment country when both are
+   * present (see rollup.ts). */
+  country: string | null;
 };
 
 export type HubSpotOwner = {
@@ -98,6 +102,7 @@ function mockCompanyByDomain(domain: string): HubSpotCompany | null {
     lifecycleStage: "opportunity",
     lastActivityDate: new Date().toISOString(),
     website: `https://${domain}`,
+    country: "United States",
   };
 }
 
@@ -346,6 +351,7 @@ export async function findCompanyByDomain(
         "lifecyclestage",
         "hs_lastmodifieddate",
         "website",
+        "country",
         targetAccountProperty,
       ],
       limit: 1,
@@ -364,6 +370,7 @@ export async function findCompanyByDomain(
     lifecycleStage: lifecycleStageLabel(hit.properties.lifecyclestage),
     lastActivityDate: hit.properties.hs_lastmodifieddate ?? null,
     website: normalizeUrl(hit.properties.website),
+    country: hit.properties.country ?? null,
   };
 }
 
