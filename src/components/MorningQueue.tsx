@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SearchIcon } from "@/components/icons";
+import { ChevronDownIcon, SearchIcon } from "@/components/icons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatRelativeTime } from "@/lib/format";
 import type { QueueEntity } from "@/lib/queue";
 import {
@@ -112,11 +114,10 @@ function CompanyAvatar({ entity }: { entity: QueueEntity }) {
   );
 }
 
-const ALL_COUNTRIES = "ALL";
-
 export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
   const [stateFilter, setStateFilter] = useState<StateFilter>("ALL");
-  const [countryFilter, setCountryFilter] = useState(ALL_COUNTRIES);
+  // Empty set = no country filter applied (show every country).
+  const [countryFilter, setCountryFilter] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
 
   const countries = useMemo(() => {
@@ -162,7 +163,9 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
       } else if (stateFilter !== "ALL") {
         if (hasNoCompany(e) || isCustomer(e) || e.relationshipState !== stateFilter) return false;
       }
-      if (countryFilter !== ALL_COUNTRIES && e.companyCountry !== countryFilter) return false;
+      if (countryFilter.size > 0 && (!e.companyCountry || !countryFilter.has(e.companyCountry))) {
+        return false;
+      }
       if (query) {
         const haystack = `${e.companyName ?? ""} ${e.companyDomain ?? ""} ${e.contactEmail ?? ""}`.toLowerCase();
         if (!haystack.includes(query)) return false;
@@ -204,18 +207,11 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
 
         <div className="flex items-center gap-2">
           {countries.length > 0 && (
-            <select
-              value={countryFilter}
-              onChange={(e) => setCountryFilter(e.target.value)}
-              className="h-9 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-medium text-zinc-600 outline-none focus-visible:border-persian-blue focus-visible:ring-2 focus-visible:ring-persian-blue/20"
-            >
-              <option value={ALL_COUNTRIES}>All countries</option>
-              {countries.map((country) => (
-                <option key={country} value={country}>
-                  {country}
-                </option>
-              ))}
-            </select>
+            <CountryFilter
+              countries={countries}
+              selected={countryFilter}
+              onChange={setCountryFilter}
+            />
           )}
 
           <div className="relative w-56">
@@ -301,6 +297,75 @@ export function MorningQueue({ entities }: { entities: QueueEntity[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+function CountryFilter({
+  countries,
+  selected,
+  onChange,
+}: {
+  countries: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  function toggle(country: string) {
+    const next = new Set(selected);
+    if (next.has(country)) {
+      next.delete(country);
+    } else {
+      next.add(country);
+    }
+    onChange(next);
+  }
+
+  const label =
+    selected.size === 0
+      ? "All countries"
+      : selected.size === 1
+        ? [...selected][0]
+        : `${selected.size} countries`;
+
+  return (
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          "flex h-9 items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3.5 text-xs font-medium text-zinc-600 outline-none hover:bg-zinc-50 focus-visible:border-persian-blue focus-visible:ring-2 focus-visible:ring-persian-blue/20",
+          selected.size > 0 && "border-persian-blue/30 bg-persian-blue/5 text-persian-blue"
+        )}
+      >
+        {label}
+        <ChevronDownIcon className="h-3.5 w-3.5" />
+      </PopoverTrigger>
+      <PopoverContent className="min-w-48">
+        <div className="flex items-center justify-between px-1.5 py-1">
+          <span className="text-xs font-medium text-zinc-400">Country</span>
+          {selected.size > 0 && (
+            <button
+              type="button"
+              onClick={() => onChange(new Set())}
+              className="text-xs font-medium text-persian-blue hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        <div className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+          {countries.map((country) => (
+            <label
+              key={country}
+              className="flex cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50"
+            >
+              <Checkbox
+                checked={selected.has(country)}
+                onCheckedChange={() => toggle(country)}
+              />
+              {country}
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
