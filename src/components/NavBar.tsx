@@ -4,10 +4,11 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/auth-actions";
-import { PowerIcon, QueueIcon, SettingsIcon } from "@/components/icons";
+import { BarChartIcon, PowerIcon, QueueIcon, SettingsIcon } from "@/components/icons";
 
 const NAV_ITEMS = [
   { href: "/", label: "Morning Queue", icon: QueueIcon },
+  { href: "/analytics", label: "Analytics", icon: BarChartIcon },
   { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 

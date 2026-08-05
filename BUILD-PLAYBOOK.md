@@ -68,7 +68,8 @@ natural commit point. Let it finish and test a step before moving on.
 > routes must be EXEMPT from the password gate (they use their own shared-secret check).
 
 ## Prompt 9 — deploy
-> Prepare for Vercel: verify all env vars are read server-side only where needed, add a
+> Prechmod +x test-payloads/fire-test-signals.sh
+./test-payloads/fire-test-signals.shpare for Vercel: verify all env vars are read server-side only where needed, add a
 > README with the deploy steps and the exact webhook URLs to register. Then I'll deploy
 > and register the live webhooks (PostHog self-serve; Reo via Customer Success →
 > Activities payload type).
