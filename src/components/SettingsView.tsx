@@ -179,7 +179,7 @@ function TagListField({
         <button
           type="button"
           onClick={addTag}
-          className="flex items-center gap-1.5 rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+          className="flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           Add
@@ -253,7 +253,7 @@ function NeverTargetField({
         <button
           type="button"
           onClick={addEntry}
-          className="flex items-center gap-1.5 rounded border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
+          className="flex items-center gap-1.5 rounded-full border border-zinc-300 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           Add
@@ -276,7 +276,7 @@ function ReoSourceGroup({
   const activityTypes = Object.keys(weights);
 
   return (
-    <details className="group rounded-lg border border-zinc-200" open={!isInactive}>
+    <details className="group rounded-2xl border border-zinc-200" open={!isInactive}>
       <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 [&::-webkit-details-marker]:hidden">
         <span className="flex items-center gap-2 text-sm font-medium text-zinc-700">
           {REO_SOURCE_LABELS[source]}
@@ -517,7 +517,7 @@ export function SettingsView({
         <button
           type="button"
           onClick={() => setActiveTab("weights")}
-          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+          className={`rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
             activeTab === "weights"
               ? "bg-persian-blue/10 text-persian-blue"
               : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
@@ -528,7 +528,7 @@ export function SettingsView({
         <button
           type="button"
           onClick={() => setActiveTab("icp")}
-          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+          className={`rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
             activeTab === "icp"
               ? "bg-persian-blue/10 text-persian-blue"
               : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"
@@ -539,7 +539,7 @@ export function SettingsView({
         <button
           type="button"
           onClick={() => setActiveTab("masterPrompt")}
-          className={`rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+          className={`rounded-full px-3.5 py-2 text-sm font-medium transition-colors ${
             activeTab === "masterPrompt"
               ? "bg-persian-blue/10 text-persian-blue"
               : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-900"

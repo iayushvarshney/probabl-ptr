@@ -1,4 +1,5 @@
 import { AnalyticsView } from "@/components/AnalyticsView";
+import { Alert } from "@/components/ui";
 import { isMissingTableError } from "@/lib/db-errors";
 import { getAnalyticsData } from "@/lib/analytics";
 
@@ -25,12 +26,11 @@ export default async function AnalyticsPage() {
 
     return (
       <div className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-          <h1 className="mb-1 text-lg font-semibold text-persian-blue">Companies/contacts table not found</h1>
+        <Alert title="Companies/contacts table not found">
           <p className="text-sm text-zinc-600">
             Run <code>supabase-schema.sql</code> in your Supabase SQL editor, then reload this page.
           </p>
-        </div>
+        </Alert>
       </div>
     );
   }

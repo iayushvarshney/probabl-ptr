@@ -66,6 +66,27 @@ Adding a source later = one new mapping function to this shape. Keep the core pi
 - **Styling** — Tailwind. Probabl brand: Persian Blue `#1E22AA` (primary), Sea Buckthorn `#F68D2E` (accent, primary buttons only), Inter font. Clean, dense, dashboard-like.
 - **Hosting** — Vercel
 
+## Visual system (structure borrowed from DESIGN.md, brand unchanged)
+
+Persian Blue / Sea Buckthorn / Inter stay exactly as specified above — no cream canvas, no
+coral, no serif. What we did borrow from DESIGN.md is structural discipline:
+
+- **Radius tiers** — `rounded-full`: buttons, filter/tab pills, primary status badges,
+  avatars. `rounded-2xl`: cards, sections, modals, alerts. `rounded-xl`: nested inner boxes
+  within a card (e.g. AI-summary boxes). Plain `rounded`: compact inline metadata chips only
+  (e.g. signal-type tags) and code/`<pre>` blocks.
+- **Elevation** — flat + `border-zinc-200` hairline by default. Shadow is reserved for
+  floating/overlay elements (modals, popovers, tooltips) and the single-card login screen —
+  never for a plain in-page card.
+- **CTA color rule** — Sea Buckthorn: commits an external write / consequential save (Push to
+  HubSpot, Settings Save, Login). Persian Blue solid: the highest-priority categorical badge
+  (`NEW_CONTACT_KNOWN_COMPANY`), or the active/checked state of a filter pill or checkbox.
+  Persian Blue tint (`bg-persian-blue/10 text-persian-blue`): active nav-link/settings-tab
+  state, AI-generation/preview actions (Suggest contact, Regenerate, Draft outreach), and
+  inline links. Neutral zinc: everything else.
+- **Neutral gray scale** — zinc only, never slate. Prefer named Tailwind color tokens over
+  arbitrary hex (e.g. `green-600`, not `bg-[#16A34A]`).
+
 ## HubSpot specifics (verified — don't re-learn)
 - Notes/Task engagement APIs run under standard Contacts/Companies scopes — there is NO separate engagement scope to add in the Private App scope picker.
 - Engagement→target associations use DIFFERENT association type IDs per target type (contact vs company vs deal). Look them up via the associations API; do NOT hardcode a guessed ID.

@@ -29,8 +29,8 @@ export const RELATIONSHIP_STATE_BADGE_CLASSES: Record<RelationshipState, string>
  * e.g. "Known contact"). Solid #16A34A ("a clear green"), deliberately not
  * a shade of the brand orange/blue, so it reads as its own distinct signal
  * rather than a variant of the relationship-state badges. */
-export const CUSTOMER_BADGE_CLASSES = "bg-[#16A34A] text-white";
+export const CUSTOMER_BADGE_CLASSES = "bg-green-600 text-white";
 
 /** Data-gap marker, not a relationship value judgment — kept neutral/gray,
  * just bordered for consistency with the other badges. */
-export const NO_COMPANY_BADGE_CLASSES = "border border-slate-200 bg-slate-100 text-slate-500";
+export const NO_COMPANY_BADGE_CLASSES = "border border-zinc-200 bg-zinc-100 text-zinc-500";

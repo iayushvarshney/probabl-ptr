@@ -26,7 +26,7 @@ export default function EntityDetailLoading() {
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {[0, 1].map((i) => (
-            <div key={i} className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4">
+            <div key={i} className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5">
               <Bar className="h-4 w-28" />
               <Bar className="h-3.5 w-full" />
               <Bar className="h-3.5 w-4/5" />
@@ -35,14 +35,14 @@ export default function EntityDetailLoading() {
           ))}
         </div>
 
-        <div className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="flex flex-col gap-3 rounded-2xl border border-zinc-200 bg-white p-5">
           <Bar className="h-4 w-32" />
           <Bar className="h-3.5 w-full" />
           <Bar className="h-3.5 w-full" />
           <Bar className="h-3.5 w-2/3" />
         </div>
 
-        <div className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-4">
+        <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-white p-5">
           <Bar className="h-4 w-24" />
           <div className="flex flex-col divide-y divide-zinc-100">
             {[0, 1, 2, 3].map((i) => (

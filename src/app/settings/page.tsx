@@ -1,4 +1,5 @@
 import { SettingsView } from "@/components/SettingsView";
+import { Alert } from "@/components/ui";
 import { isMissingTableError } from "@/lib/db-errors";
 import { getIcpConfigRow, getMasterPromptRow, getScoringWeightsRow } from "@/lib/settings";
 
@@ -48,17 +49,14 @@ export default async function SettingsPage() {
 
     return (
       <div className="mx-auto w-full max-w-2xl flex-1 px-6 py-8">
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-5">
-          <h1 className="mb-1 text-lg font-semibold text-persian-blue">
-            Settings table not found
-          </h1>
+        <Alert title="Settings table not found">
           <p className="mb-3 text-sm text-zinc-600">
             Run this once in your Supabase SQL editor, then reload this page:
           </p>
           <pre className="overflow-x-auto rounded bg-zinc-900 p-3 text-xs text-zinc-100">
             {MIGRATION_SNIPPET}
           </pre>
-        </div>
+        </Alert>
       </div>
     );
   }

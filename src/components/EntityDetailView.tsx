@@ -394,7 +394,7 @@ export function EntityDetailView({ detail: initialDetail }: { detail: EntityDeta
       </header>
 
       {detail.topReason && (
-        <p className="rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-600">
+        <p className="rounded-2xl border border-zinc-200 bg-white p-5 text-sm text-zinc-600">
           {detail.topReason}
         </p>
       )}

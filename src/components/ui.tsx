@@ -26,3 +26,12 @@ export function Field({ label, children }: { label: string; children: React.Reac
     </label>
   );
 }
+
+export function Alert({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+      <h1 className="mb-1 text-lg font-semibold text-persian-blue">{title}</h1>
+      {children}
+    </div>
+  );
+}
